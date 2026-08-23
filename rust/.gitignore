@@ -1,0 +1,7 @@
+target/
+.omx/
+.crudo-agents/
+# Crudo local artifacts
+.crudo/settings.local.json
+.crudo/sessions/
+.crudohip/

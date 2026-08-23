@@ -1,0 +1,15 @@
+defaults:
+  rigour: high
+
+auto_detect_hints:
+  default_depth: baseline
+  default_strategic: competitive
+  perf_critical: false
+  security_sensitive: true
+
+# Per-command overrides (uncomment to customize):
+# overrides:
+#   epic-plan:
+#     rigour: high
+#   bug-rc:
+#     rigour: high

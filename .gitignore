@@ -1,0 +1,29 @@
+__pycache__/
+archive/
+.omx/
+.crudo-agents/
+# Claude Code local artifacts
+.claude/settings.local.json
+.claude/sessions/
+# Crudo local artifacts
+.crudo/settings.local.json
+.crudo/sessions/
+.crudo/rules.local/
+.crudohip/
+status-help.txt
+# Legacy Python port session scratch artifacts
+.port_sessions/
+
+# Auto-added by Nuvai session-start-governance-check
+.nuvai/reports
+.nuvai/local/
+.DS_Store
+.nuvai/active-context.yaml
+.nuvai/active-prompts/
+.nuvai/debug/
+.nuvai/bug-rc/
+.nuvai/agent-progress/
+.nuvai/issues.jsonl
+.nuvai/discussions.jsonl
+.nuvai/reviews/
+.nuvai/audits
