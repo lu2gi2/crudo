@@ -21,7 +21,8 @@ TOOLS = [
     {"name": "extract_document", "description": "Extract a local document with Docling; returns Markdown and status.", "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
     {"name": "ocr_document", "description": "Run local OCR on an image when PaddleOCR assets are available.", "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
     {"name": "search_knowledge", "description": "Search the local synthetic knowledge corpus and return citations.", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}},
-    {"name": "generate_presentation", "description": "Compile an evidence-bound presentation plan into a real editable PPTX.", "inputSchema": {"type": "object", "properties": {"plan_path": {"type": "string"}, "output_name": {"type": "string"}}, "required": ["plan_path"]}},
+    {"name": "create_board_presentation", "description": "Create the synthetic truck-fleet board deck directly. Use this for a board-deck request; do not inspect server source or use Bash.", "inputSchema": {"type": "object", "properties": {"output_name": {"type": "string"}}}},
+    {"name": "generate_presentation", "description": "Compile an evidence-bound presentation plan into a real editable PPTX. Use only after a plan exists.", "inputSchema": {"type": "object", "properties": {"plan_path": {"type": "string"}, "output_name": {"type": "string"}}, "required": ["plan_path"]}},
     {"name": "verify_presentation", "description": "Verify a generated PPTX contains required content and citations.", "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
     {"name": "run_code", "description": "Run the fixed safe coding demo; no arbitrary host commands accepted.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}},
     {"name": "analyze_image", "description": "Analyze a local image only when a local vision model is available.", "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
@@ -42,8 +43,26 @@ def safe_path(raw: str, roots=(DATA, WORKSPACE, OUTPUT)) -> Path:
     return candidate
 
 
-def text_result(value: Any) -> dict[str, Any]:
-    return {"content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False, indent=2)}], "isError": False}
+def mcp_result(value: Any, text: str | None = None, *, is_error: bool = False) -> dict[str, Any]:
+    """Return human-facing MCP text plus machine-readable structured content."""
+    if text is None:
+        if isinstance(value, dict):
+            status = value.get("status")
+            if status:
+                text = f"Status: {status}"
+            elif "output_path" in value:
+                text = f"Presentation generated: {value['output_path']} ({value.get('slide_count', '?')} slides)"
+            elif "verified" in value:
+                text = f"Presentation verification: {'PASS' if value['verified'] else 'FAIL'}"
+            else:
+                text = "Local tool completed."
+        else:
+            text = "Local tool completed."
+    return {
+        "content": [{"type": "text", "text": text}],
+        "structuredContent": value,
+        "isError": is_error,
+    }
 
 
 def call_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -64,16 +83,16 @@ def call_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
             markdown = path.read_text(encoding="utf-8", errors="replace") if path.suffix.lower() in {".md", ".txt"} else ""
             status = f"docling_unavailable: {type(exc).__name__}"
         out.write_text(markdown, encoding="utf-8")
-        return text_result({"status": status, "output_path": str(out), "characters": len(markdown), "sha256": hashlib.sha256(markdown.encode()).hexdigest()})
+        return mcp_result({"status": status, "output_path": str(out), "characters": len(markdown), "sha256": hashlib.sha256(markdown.encode()).hexdigest()})
     if name == "ocr_document":
         path = safe_path(args["path"])
         try:
             from paddleocr import PaddleOCR
             ocr = PaddleOCR(lang="en", device="cpu")
             result = ocr.predict(str(path))
-            return text_result({"status": "paddleocr_active", "path": str(path), "result": str(result)[:12000]})
+            return mcp_result({"status": "paddleocr_active", "path": str(path), "result": str(result)[:12000]})
         except Exception as exc:
-            return text_result({"status": "unavailable", "reason": f"{type(exc).__name__}: {exc}", "path": str(path)})
+            return mcp_result({"status": "unavailable", "reason": f"{type(exc).__name__}: {exc}", "path": str(path)})
     if name == "search_knowledge":
         query = str(args["query"]).lower()
         hits = []
@@ -81,25 +100,33 @@ def call_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
             text = path.read_text(encoding="utf-8", errors="replace")
             if query in text.lower() or any(word in text.lower() for word in query.split()):
                 hits.append({"source": str(path.relative_to(ROOT)), "section": "local-demo", "text": text[:1600], "score": 1.0})
-        return text_result({"query": query, "hits": hits[:5], "status": "local_keyword_search"})
+        return mcp_result({"query": query, "hits": hits[:5], "status": "local_keyword_search"})
+    if name == "create_board_presentation":
+        plan = load_plan(DATA / "truck_fleet_plan.json")
+        output_name = str(args.get("output_name", "mangalore_refinery_truck_fleet_board_deck.pptx"))
+        if Path(output_name).name != output_name or not output_name.endswith(".pptx"):
+            raise ValueError("output_name must be a simple .pptx filename")
+        result = render_plan(plan, OUTPUT / output_name)
+        return mcp_result(result, f"Board presentation created: {result['output_path']} ({result['slide_count']} slides)\nSynthetic demo assumptions • Human review required")
     if name == "generate_presentation":
         plan_path = safe_path(args["plan_path"], roots=(DATA, WORKSPACE))
         plan = load_plan(plan_path)
         output_name = str(args.get("output_name", "truck_fleet_board_report.pptx"))
         if Path(output_name).name != output_name or not output_name.endswith(".pptx"):
             raise ValueError("output_name must be a simple .pptx filename")
-        return text_result(render_plan(plan, OUTPUT / output_name))
+        result = render_plan(plan, OUTPUT / output_name)
+        return mcp_result(result, f"Presentation generated: {result['output_path']} ({result['slide_count']} slides)\nSynthetic demo assumptions • Human review required")
     if name == "verify_presentation":
         path = safe_path(args["path"], roots=(OUTPUT,))
         from pptx import Presentation
         prs = Presentation(path)
         text = "\n".join(shape.text for slide in prs.slides for shape in slide.shapes if hasattr(shape, "text"))
         checks = {"readable": True, "slide_count": len(prs.slides), "has_sources": "Sources:" in text, "has_review_notice": "Human review required" in text, "has_synthetic_notice": "SYNTHETIC" in text}
-        return text_result({"path": str(path), "checks": checks, "verified": all(checks.values())})
+        return mcp_result({"path": str(path), "checks": checks, "verified": all(checks.values())})
     if name == "run_code":
-        return text_result({"status": "refused", "reason": "no fail-closed sandbox is configured for this demo"})
+        return mcp_result({"status": "refused", "reason": "no fail-closed sandbox is configured for this demo"})
     if name == "analyze_image":
-        return text_result({"status": "unavailable", "reason": "no local vision model configured; no engineering claim made"})
+        return mcp_result({"status": "unavailable", "reason": "no local vision model configured; no engineering claim made"})
     raise ValueError(f"unknown tool: {name}")
 
 
