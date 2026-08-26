@@ -9,6 +9,10 @@ archive/
 .crudo/settings.local.json
 .crudo/sessions/
 .crudo/rules.local/
+# Local demo runtime artifacts
+demo/workspace/
+ demo/output/*.pptx
+ demo/mcp_server/__pycache__/
 .crudohip/
 status-help.txt
 # Legacy Python port session scratch artifacts

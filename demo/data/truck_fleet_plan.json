@@ -1,0 +1,13 @@
+{
+  "title": "Truck Fleet Capacity Management",
+  "human_review_required": true,
+  "slides": [
+    {"type": "title", "title": "Truck Fleet Capacity Management", "subtitle": "Board briefing • Mangalore Refinery and Petrochemicals Limited • Synthetic demonstration", "source_ids": ["synthetic_demo_assumptions"]},
+    {"type": "summary", "title": "Executive Summary", "bullets": ["Synthetic planning case: balance daily dispatch demand against loading capacity.", "Illustrative baseline: 42 trucks available, 34 average daily requirement, 8 trucks idle on average.", "Recommended decision: pilot demand-based dispatch scheduling before changing fleet contracts."], "source_ids": ["synthetic_demo_assumptions"]},
+    {"type": "findings_table", "title": "Illustrative Fleet Findings", "columns": ["Measure", "Baseline", "Observation", "Source"], "rows": [{"cells": ["Available trucks", "42", "Capacity exceeds illustrative demand", "Synthetic assumptions"]}, {"cells": ["Average daily requirement", "34", "Demand varies by dispatch day", "Synthetic assumptions"]}, {"cells": ["Average idle capacity", "8 trucks", "Opportunity for scheduling improvement", "Synthetic assumptions"]}], "source_ids": ["synthetic_demo_assumptions"]},
+    {"type": "evidence", "title": "Planning Evidence", "quote": "Fleet sizing should be reviewed against demand variability, loading slots, turnaround time, and safety constraints.", "source": "Synthetic logistics planning note, section 2", "source_ids": ["synthetic_logistics_note_section_2"]},
+    {"type": "recommendations", "title": "Recommended Pilot", "bullets": ["Introduce a daily dispatch forecast and slot-based truck appointment schedule.", "Track utilization, queue time, turnaround time, and late dispatches for four weeks.", "Review contracted capacity only after the pilot produces measured utilization data.", "No autonomous operational or safety decision is made by this demo."], "source_ids": ["synthetic_demo_assumptions"]},
+    {"type": "workflow_trace", "title": "Agent Workflow", "bullets": ["Crudo agent: task orchestration", "Local presentation compiler: structured plan → editable PPTX", "Evidence model: source IDs attached to claims", "Verification: slide readability, citations, and review notice"], "source_ids": ["demo_workflow"]},
+    {"type": "security_status", "title": "Sovereignty and Review Status", "bullets": ["Data in this deck is synthetic and non-confidential.", "Artifact generation is local through python-pptx.", "Remote Luna is a development-only model endpoint and is not used as proof of sovereignty.", "Human review is required before any operational use."], "source_ids": ["demo_security_notice"]}
+  ]
+}
