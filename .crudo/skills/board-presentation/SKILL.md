@@ -15,4 +15,4 @@ For synthetic/public demo requests involving a board presentation:
 6. Call `mcp__industrial_demo__verify_presentation` on the generated artifact.
 7. Report the artifact path, verification checks, citations, assumptions, and `human_review_required: true`.
 
-Do not send confidential files to the remote Luna development endpoint. Do not claim OCR, RAG, vision, rendering, or sandbox execution succeeded unless the corresponding tool returned an active/success status. A presentation generated from synthetic assumptions must be clearly labeled as a demo and not an operational recommendation.
+Do not send confidential files to the remote Luna development endpoint. Do not claim OCR, RAG, vision, rendering, or sandbox execution succeeded unless the corresponding tool returned an active/success status. A presentation or approval note generated from synthetic assumptions must be clearly labeled as a demo and not an operational recommendation. For Word output, call `mcp__industrial_demo__create_approval_note` followed by `mcp__industrial_demo__verify_word_document`; never create DOCX through Bash.

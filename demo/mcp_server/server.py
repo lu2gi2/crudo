@@ -24,6 +24,8 @@ TOOLS = [
     {"name": "create_board_presentation", "description": "Create the synthetic truck-fleet board deck directly. Use this for a board-deck request; do not inspect server source or use Bash.", "inputSchema": {"type": "object", "properties": {"output_name": {"type": "string"}}}},
     {"name": "generate_presentation", "description": "Compile an evidence-bound presentation plan into a real editable PPTX. Use only after a plan exists.", "inputSchema": {"type": "object", "properties": {"plan_path": {"type": "string"}, "output_name": {"type": "string"}}, "required": ["plan_path"]}},
     {"name": "verify_presentation", "description": "Verify a generated PPTX contains required content and citations.", "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
+    {"name": "create_approval_note", "description": "Create an editable synthetic approval-note DOCX from a local report.", "inputSchema": {"type": "object", "properties": {"report_path": {"type": "string"}, "output_name": {"type": "string"}}, "required": ["report_path"]}},
+    {"name": "verify_word_document", "description": "Verify a generated DOCX contains required sections, citations, and review notices.", "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
     {"name": "run_code", "description": "Run the fixed safe coding demo; no arbitrary host commands accepted.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}},
     {"name": "analyze_image", "description": "Analyze a local image only when a local vision model is available.", "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
 ]
@@ -82,8 +84,15 @@ def call_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         except Exception as exc:
             markdown = path.read_text(encoding="utf-8", errors="replace") if path.suffix.lower() in {".md", ".txt"} else ""
             status = f"docling_unavailable: {type(exc).__name__}"
+        if not markdown.strip():
+            return mcp_result(
+                {"status": status, "output_path": None, "characters": 0},
+                f"Document extraction unavailable: {status}. No output document was created.",
+                is_error=True,
+            )
         out.write_text(markdown, encoding="utf-8")
-        return mcp_result({"status": status, "output_path": str(out), "characters": len(markdown), "sha256": hashlib.sha256(markdown.encode()).hexdigest()})
+        result = {"status": status, "output_path": str(out), "characters": len(markdown), "sha256": hashlib.sha256(markdown.encode()).hexdigest()}
+        return mcp_result(result, f"Document extracted with {status}: {out} ({len(markdown)} characters)")
     if name == "ocr_document":
         path = safe_path(args["path"])
         try:
@@ -123,6 +132,44 @@ def call_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         text = "\n".join(shape.text for slide in prs.slides for shape in slide.shapes if hasattr(shape, "text"))
         checks = {"readable": True, "slide_count": len(prs.slides), "has_sources": "Sources:" in text, "has_review_notice": "Human review required" in text, "has_synthetic_notice": "SYNTHETIC" in text}
         return mcp_result({"path": str(path), "checks": checks, "verified": all(checks.values())})
+    if name == "create_approval_note":
+        report_path = safe_path(args["report_path"], roots=(DATA, WORKSPACE))
+        if not report_path.is_file():
+            raise ValueError(f"report not found: {report_path}")
+        output_name = str(args.get("output_name", "synthetic_approval_note.docx"))
+        if Path(output_name).name != output_name or not output_name.endswith(".docx"):
+            raise ValueError("output_name must be a simple .docx filename")
+        from docx import Document
+        from docx.shared import Inches, Pt
+        report = report_path.read_text(encoding="utf-8", errors="replace")
+        document = Document()
+        document.add_heading("Draft Approval Note", 0)
+        document.add_paragraph("SYNTHETIC DEMONSTRATION DATA — NOT AN OPERATIONAL APPROVAL", style="Subtitle")
+        document.add_heading("1. Purpose", level=1)
+        document.add_paragraph("This document is an AI-assisted draft prepared from the supplied synthetic inspection report. Human review is required before any operational use.")
+        document.add_heading("2. Source Report", level=1)
+        document.add_paragraph(f"Source: {report_path.relative_to(ROOT)}")
+        document.add_paragraph(report[:5000])
+        document.add_heading("3. Findings for Review", level=1)
+        document.add_paragraph("The supplied report should be reviewed for asset identity, measured values, units, thresholds, and inspection date. Any unreadable or ambiguous value must be confirmed by a qualified reviewer.")
+        document.add_heading("4. Recommended Follow-up", level=1)
+        document.add_paragraph("Prepare a maintenance review using the applicable local procedure. This draft does not authorize maintenance, fleet, safety, or operational action.")
+        document.add_heading("5. Assumptions and Limitations", level=1)
+        document.add_paragraph("All figures and recommendations are synthetic demo assumptions. The document is not engineering certification and does not replace operational approval.")
+        document.add_heading("6. Human Review and Sign-off", level=1)
+        document.add_paragraph("Reviewer: ____________________    Date: ____________________\nDecision/remarks: __________________________________________")
+        output_path = OUTPUT / output_name
+        document.save(output_path)
+        digest = hashlib.sha256(output_path.read_bytes()).hexdigest()
+        result = {"output_path": str(output_path), "source": str(report_path), "sha256": digest, "human_review_required": True}
+        return mcp_result(result, f"Approval note created: {output_path}\nSynthetic demo assumptions • Human review required")
+    if name == "verify_word_document":
+        path = safe_path(args["path"], roots=(OUTPUT,))
+        from docx import Document
+        document = Document(path)
+        text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+        checks = {"readable": True, "has_source": "Source:" in text, "has_synthetic_notice": "SYNTHETIC" in text, "has_review_notice": "Human review" in text, "has_signoff": "Sign-off" in text}
+        return mcp_result({"path": str(path), "checks": checks, "verified": all(checks.values())}, f"Word document verification: {'PASS' if all(checks.values()) else 'FAIL'}")
     if name == "run_code":
         return mcp_result({"status": "refused", "reason": "no fail-closed sandbox is configured for this demo"})
     if name == "analyze_image":
