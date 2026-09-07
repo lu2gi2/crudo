@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from office import render_to_pdf
 from presentation import load_plan, render_plan
 
 ROOT = Path(os.environ.get("CRUDO_DEMO_ROOT", Path(__file__).resolve().parents[1])).resolve()
@@ -96,12 +97,33 @@ def call_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
     if name == "ocr_document":
         path = safe_path(args["path"])
         try:
+            os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
             from paddleocr import PaddleOCR
             ocr = PaddleOCR(lang="en", device="cpu")
-            result = ocr.predict(str(path))
-            return mcp_result({"status": "paddleocr_active", "path": str(path), "result": str(result)[:12000]})
+            raw_results = list(ocr.predict(str(path)))
+            pages = []
+            for raw in raw_results:
+                json_value = getattr(raw, "json", None)
+                if callable(json_value):
+                    payload = json_value()
+                elif isinstance(json_value, dict):
+                    payload = json_value
+                else:
+                    payload = {}
+                data = payload.get("res", payload) if isinstance(payload, dict) else {}
+                texts = data.get("rec_texts", [])
+                scores = data.get("rec_scores", [])
+                pages.append({
+                    "page_index": data.get("page_index"),
+                    "texts": texts,
+                    "confidences": scores,
+                    "text": "\n".join(texts),
+                })
+            extracted = "\n\n".join(page["text"] for page in pages)
+            result = {"status": "paddleocr_active", "path": str(path), "pages": pages, "text": extracted, "text_count": len(extracted)}
+            return mcp_result(result, f"OCR completed with PaddleOCR: {path}\nExtracted {len(extracted)} characters from {len(pages)} page(s)")
         except Exception as exc:
-            return mcp_result({"status": "unavailable", "reason": f"{type(exc).__name__}: {exc}", "path": str(path)})
+            return mcp_result({"status": "unavailable", "reason": f"{type(exc).__name__}: {exc}", "path": str(path)}, f"OCR unavailable: {type(exc).__name__}: {exc}", is_error=True)
     if name == "search_knowledge":
         query = str(args["query"]).lower()
         hits = []
@@ -130,8 +152,11 @@ def call_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         from pptx import Presentation
         prs = Presentation(path)
         text = "\n".join(shape.text for slide in prs.slides for shape in slide.shapes if hasattr(shape, "text"))
-        checks = {"readable": True, "slide_count": len(prs.slides), "has_sources": "Sources:" in text, "has_review_notice": "Human review required" in text, "has_synthetic_notice": "SYNTHETIC" in text}
-        return mcp_result({"path": str(path), "checks": checks, "verified": all(checks.values())})
+        render = render_to_pdf(path)
+        checks = {"readable": True, "slide_count": len(prs.slides), "has_sources": "Sources:" in text, "has_review_notice": "Human review required" in text, "has_synthetic_notice": "SYNTHETIC" in text, "libreoffice_rendered": render["rendered"]}
+        verified = all(checks.values())
+        status = "PASS" if verified else "FAIL"
+        return mcp_result({"path": str(path), "checks": checks, "libreoffice": render, "verified": verified}, f"Presentation verification: {status} (LibreOffice render: {'PASS' if render['rendered'] else 'FAIL'})")
     if name == "create_approval_note":
         report_path = safe_path(args["report_path"], roots=(DATA, WORKSPACE))
         if not report_path.is_file():
@@ -168,8 +193,10 @@ def call_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         from docx import Document
         document = Document(path)
         text = "\n".join(paragraph.text for paragraph in document.paragraphs)
-        checks = {"readable": True, "has_source": "Source:" in text, "has_synthetic_notice": "SYNTHETIC" in text, "has_review_notice": "Human review" in text, "has_signoff": "Sign-off" in text}
-        return mcp_result({"path": str(path), "checks": checks, "verified": all(checks.values())}, f"Word document verification: {'PASS' if all(checks.values()) else 'FAIL'}")
+        render = render_to_pdf(path)
+        checks = {"readable": True, "has_source": "Source:" in text, "has_synthetic_notice": "SYNTHETIC" in text, "has_review_notice": "Human review" in text, "has_signoff": "Sign-off" in text, "libreoffice_rendered": render["rendered"]}
+        verified = all(checks.values())
+        return mcp_result({"path": str(path), "checks": checks, "libreoffice": render, "verified": verified}, f"Word document verification: {'PASS' if verified else 'FAIL'} (LibreOffice render: {'PASS' if render['rendered'] else 'FAIL'})")
     if name == "run_code":
         return mcp_result({"status": "refused", "reason": "no fail-closed sandbox is configured for this demo"})
     if name == "analyze_image":

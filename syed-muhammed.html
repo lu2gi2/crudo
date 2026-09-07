@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A monochrome digital profile for Syed Muhammed, software engineer.">
+  <title>Syed Muhammed · Software Engineer</title>
+  <style>
+    :root {
+      --black: #080808;
+      --ink: #151515;
+      --gray: #727272;
+      --line: #d9d9d9;
+      --paper: #f4f4f0;
+      --white: #fff;
+      --serif: Georgia, "Times New Roman", serif;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font: 16px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    a { color: inherit; }
+    button { font: inherit; }
+    .wrap { width: min(1160px, calc(100% - 40px)); margin: auto; }
+    .mono { font-family: var(--mono); }
+    .eyebrow { font: 700 .72rem/1.2 var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+
+    header {
+      position: sticky; top: 0; z-index: 5;
+      border-bottom: 1px solid var(--line);
+      background: rgba(244,244,240,.92);
+      backdrop-filter: blur(12px);
+    }
+    .nav { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .mark { display: flex; align-items: center; gap: 11px; font-weight: 800; letter-spacing: -.04em; }
+    .mark-icon { display: grid; place-items: center; width: 35px; height: 35px; color: var(--white); background: var(--black); border-radius: 50%; font: 700 .78rem var(--mono); }
+    nav { display: flex; gap: 24px; font: 600 .82rem var(--mono); }
+    nav a { text-decoration: none; color: var(--gray); }
+    nav a:hover { color: var(--black); }
+
+    .hero { min-height: 650px; display: grid; grid-template-columns: 1.3fr .7fr; align-items: center; gap: 60px; padding: 95px 0 110px; }
+    h1 { max-width: 800px; margin: 17px 0 26px; font: 400 clamp(4rem, 10vw, 9rem)/.87 var(--serif); letter-spacing: -.085em; }
+    h1 em { display: block; font-style: italic; }
+    .hero-copy { max-width: 570px; color: var(--gray); font-size: 1.12rem; }
+    .hero-copy strong { color: var(--ink); }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+    .button { display: inline-flex; align-items: center; gap: 10px; border: 1px solid var(--black); padding: 12px 17px; border-radius: 3px; text-decoration: none; font: 700 .8rem var(--mono); cursor: pointer; }
+    .button.dark { color: var(--white); background: var(--black); }
+    .button.light { background: transparent; }
+    .button:hover { transform: translateY(-2px); box-shadow: 4px 4px 0 var(--black); }
+
+    .portrait { position: relative; aspect-ratio: 4/5; max-width: 330px; margin-left: auto; background: var(--black); overflow: hidden; }
+    .portrait::before { content: ""; position: absolute; inset: 12px; border: 1px solid #fff5; }
+    .portrait-art { position: absolute; inset: 13%; display: grid; place-items: center; color: var(--white); font: 400 clamp(6rem, 16vw, 11rem)/1 var(--serif); letter-spacing: -.16em; }
+    .portrait-label { position: absolute; left: 20px; right: 20px; bottom: 20px; display: flex; justify-content: space-between; color: #ccc; font: .7rem var(--mono); }
+    .orbit { position: absolute; width: 70%; height: 28%; border: 1px solid #fff6; border-radius: 50%; transform: rotate(-28deg); }
+
+    section { padding: 95px 0; border-top: 1px solid var(--line); }
+    .section-head { display: grid; grid-template-columns: 180px 1fr; gap: 30px; margin-bottom: 42px; }
+    .section-head h2 { max-width: 700px; margin: 0; font: 400 clamp(2.2rem, 5vw, 4.5rem)/.98 var(--serif); letter-spacing: -.065em; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--black); border: 1px solid var(--black); }
+    .card { min-height: 225px; padding: 25px; background: var(--paper); }
+    .card:hover { background: var(--white); }
+    .card h3 { margin: 25px 0 8px; font-size: 1.2rem; }
+    .card p { margin: 0; color: var(--gray); }
+    .card-number { font: 700 .8rem var(--mono); }
+    .skills { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 22px; }
+    .tag { padding: 7px 10px; border: 1px solid var(--line); border-radius: 99px; color: var(--gray); font: .72rem var(--mono); }
+
+    .terminal { color: var(--white); background: var(--black); padding: 22px; border-radius: 4px; box-shadow: 12px 12px 0 #d0d0cb; }
+    .terminal-bar { display: flex; gap: 7px; padding-bottom: 22px; border-bottom: 1px solid #333; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: #fff; }
+    .terminal pre { min-height: 230px; margin: 22px 0 0; white-space: pre-wrap; font: .88rem/1.75 var(--mono); }
+    .terminal .muted { color: #888; }
+    .cursor { display: inline-block; width: 8px; height: 1em; vertical-align: -.15em; background: var(--white); animation: blink 1s steps(2) infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    .quote { max-width: 850px; margin: auto; text-align: center; }
+    blockquote { margin: 0; font: italic clamp(2rem, 5vw, 4.5rem)/1.05 var(--serif); letter-spacing: -.055em; }
+    cite { display: block; margin-top: 26px; color: var(--gray); font: .75rem var(--mono); font-style: normal; }
+
+    footer { color: #bbb; background: var(--black); padding: 30px 0; }
+    .footer-inner { display: flex; justify-content: space-between; gap: 20px; font: .75rem var(--mono); }
+    .counter { color: var(--black); background: var(--white); padding: 2px 6px; }
+    .reveal { opacity: 0; transform: translateY(20px); transition: opacity .7s ease, transform .7s ease; }
+    .reveal.visible { opacity: 1; transform: none; }
+
+    @media (max-width: 760px) {
+      .wrap { width: min(100% - 28px, 600px); }
+      nav { display: none; }
+      .hero { min-height: auto; grid-template-columns: 1fr; gap: 45px; padding: 75px 0 80px; }
+      .portrait { width: min(100%, 280px); margin: 0; }
+      .section-head { grid-template-columns: 1fr; gap: 13px; }
+      .grid-3 { grid-template-columns: 1fr; }
+      section { padding: 70px 0; }
+      .footer-inner { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap nav">
+      <a class="mark" href="#top" aria-label="Back to top"><span class="mark-icon">SM</span> SYED MUHAMMED</a>
+      <nav aria-label="Main navigation">
+        <a href="#craft">Craft</a><a href="#stack">Stack</a><a href="#mindset">Mindset</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <div class="wrap hero">
+      <div class="reveal">
+        <div class="eyebrow">Software engineer · builder of useful things</div>
+        <h1>Ideas into<br><em>interfaces.</em></h1>
+        <p class="hero-copy">Meet <strong>Syed Muhammed</strong> — a software engineer who turns complex problems into calm, thoughtful digital experiences. Equal parts logic, curiosity, and craft.</p>
+        <div class="actions">
+          <a class="button dark" href="#craft">Explore the work <span>↓</span></a>
+          <button class="button light" id="hello">Say hello <span>↗</span></button>
+        </div>
+      </div>
+      <div class="portrait reveal" aria-label="Abstract black and white portrait graphic">
+        <div class="orbit"></div><div class="portrait-art">S<br>M</div>
+        <div class="portrait-label"><span>EST. / ALWAYS LEARNING</span><span>001</span></div>
+      </div>
+    </div>
+
+    <section id="craft">
+      <div class="wrap">
+        <div class="section-head reveal"><div class="eyebrow">01 / The craft</div><h2>Make it work.<br>Make it clear.<br>Make it matter.</h2></div>
+        <div class="grid-3 reveal">
+          <article class="card"><span class="card-number">01 — BUILD</span><h3>From blank page</h3><p>He enjoys the first principles: understanding the real problem, shaping the architecture, and making the first thing run.</p></article>
+          <article class="card"><span class="card-number">02 — REFINE</span><h3>Details are features</h3><p>Fast is good. Reliable is better. The best solutions feel simple because the hard thinking happened underneath.</p></article>
+          <article class="card"><span class="card-number">03 — SHIP</span><h3>Useful beats flashy</h3><p>Software earns its place by helping someone do something better, faster, or with a little less friction.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="stack">
+      <div class="wrap">
+        <div class="section-head reveal"><div class="eyebrow">02 / The toolkit</div><h2>A modern stack,<br>an enduring curiosity.</h2></div>
+        <div class="grid-3 reveal">
+          <article class="card"><span class="card-number">CORE</span><h3>Engineering</h3><p>Thoughtful systems with clean boundaries and strong fundamentals.</p><div class="skills"><span class="tag">APIs</span><span class="tag">Databases</span><span class="tag">Testing</span><span class="tag">Architecture</span></div></article>
+          <article class="card"><span class="card-number">FRONT OF HOUSE</span><h3>Experience</h3><p>Interfaces that make technology feel approachable, fast, and human.</p><div class="skills"><span class="tag">HTML / CSS</span><span class="tag">JavaScript</span><span class="tag">Accessibility</span><span class="tag">Motion</span></div></article>
+          <article class="card"><span class="card-number">ALWAYS ON</span><h3>Learning</h3><p>New tools come and go. The habit of asking better questions stays.</p><div class="skills"><span class="tag">Curiosity</span><span class="tag">Debugging</span><span class="tag">Collaboration</span><span class="tag">Coffee</span></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="mindset">
+      <div class="wrap">
+        <div class="section-head reveal"><div class="eyebrow">03 / The mindset</div><h2>Behind every good commit is a good question.</h2></div>
+        <div class="terminal reveal" role="region" aria-label="Interactive terminal introduction">
+          <div class="terminal-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <pre id="terminalText"><span class="muted">$ whoami</span>
+syed.muhammed
+
+<span class="muted">$ cat principles.txt</span>
+1. Stay curious.
+2. Prefer clarity.
+3. Leave things better than you found them.
+4. Keep building.
+
+<span class="muted">$ <span id="terminalCommand">ready</span></span> <span class="cursor"></span></pre>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap quote reveal">
+        <blockquote>“The best code is not just clever. It gives someone a better day.”</blockquote>
+        <cite>— THE SYED MUHAMMED WAY</cite>
+      </div>
+    </section>
+  </main>
+
+  <footer><div class="wrap footer-inner"><span>© <span id="year"></span> SYED MUHAMMED / SOFTWARE ENGINEER</span><span>BUILT WITH <span class="counter">BLACK + WHITE</span></span></div></footer>
+
+  <script>
+    const reveal = new IntersectionObserver(entries => entries.forEach(entry => {
+      if (entry.isIntersecting) { entry.target.classList.add('visible'); reveal.unobserve(entry.target); }
+    }), { threshold: .12 });
+    document.querySelectorAll('.reveal').forEach(element => reveal.observe(element));
+    document.querySelector('#year').textContent = new Date().getFullYear();
+    document.querySelector('#hello').addEventListener('click', event => {
+      event.currentTarget.innerHTML = 'Message received <span>✓</span>';
+      event.currentTarget.style.background = '#fff';
+      event.currentTarget.style.color = '#080808';
+      document.querySelector('#terminalCommand').textContent = 'hello, friend';
+    });
+  </script>
+</body>
+</html>

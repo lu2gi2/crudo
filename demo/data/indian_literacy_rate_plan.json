@@ -1,0 +1,78 @@
+{
+  "title": "India's Literacy Journey",
+  "human_review_required": true,
+  "slides": [
+    {
+      "type": "title",
+      "title": "India's Literacy Journey",
+      "subtitle": "Progress, disparities and priorities | Evidence briefing",
+      "source_ids": ["Census of India 2011"]
+    },
+    {
+      "type": "summary",
+      "title": "The headline: strong progress, unfinished inclusion",
+      "bullets": [
+        "India's literacy rate rose from 64.84% in 2001 to 74.04% in Census 2011.",
+        "The 2011 gender gap was 16.68 percentage points: male 82.14% versus female 65.46%.",
+        "The rural–urban gap was 15.20 points: rural 68.91% versus urban 84.11%.",
+        "The next challenge is not only access to school, but foundational learning and equitable attainment.",
+        "The latest all-India population-census benchmark remains 2011; newer survey estimates should not be mixed without noting methodology."
+      ],
+      "source_ids": ["Census of India 2001", "Census of India 2011", "NSO Education in India 2017-18"]
+    },
+    {
+      "type": "findings_table",
+      "title": "A decade of national progress",
+      "columns": ["Census year", "Total", "Male", "Female", "Gender gap"],
+      "rows": [
+        {"cells": ["2001", "64.84%", "75.26%", "53.67%", "21.59 pp"]},
+        {"cells": ["2011", "74.04%", "82.14%", "65.46%", "16.68 pp"]},
+        {"cells": ["Change", "+9.20 pp", "+6.88 pp", "+11.79 pp", "−4.91 pp"]}
+      ],
+      "source_ids": ["Census of India 2001", "Census of India 2011"]
+    },
+    {
+      "type": "findings_table",
+      "title": "Place matters: rural and urban literacy",
+      "columns": ["Residence", "Total", "Male", "Female", "Gender gap"],
+      "rows": [
+        {"cells": ["Rural", "68.91%", "78.57%", "58.75%", "19.82 pp"]},
+        {"cells": ["Urban", "84.11%", "89.67%", "79.92%", "9.75 pp"]},
+        {"cells": ["Urban advantage", "+15.20 pp", "+11.10 pp", "+21.17 pp", "−10.07 pp"]}
+      ],
+      "source_ids": ["Census of India 2011"]
+    },
+    {
+      "type": "findings_table",
+      "title": "State variation is wide",
+      "columns": ["State / UT", "Literacy rate", "Interpretation"],
+      "rows": [
+        {"cells": ["Kerala", "93.91%", "Highest among states in 2011"]},
+        {"cells": ["Mizoram", "91.33%", "High-performing northeastern state"]},
+        {"cells": ["Goa", "88.70%", "Above national average"]},
+        {"cells": ["India", "74.04%", "National benchmark"]},
+        {"cells": ["Bihar", "61.80%", "Lowest among states in 2011"]}
+      ],
+      "source_ids": ["Census of India 2011, Primary Census Abstract"]
+    },
+    {
+      "type": "recommendations",
+      "title": "What the evidence points toward",
+      "bullets": [
+        "Target girls and women in rural and underserved communities with flexible, locally delivered literacy programmes.",
+        "Pair enrolment and attendance measures with foundational reading and numeracy assessments.",
+        "Use state-level diagnostics rather than a single national average to allocate resources.",
+        "Track outcomes by gender, residence, age, disability and socioeconomic status.",
+        "Refresh the baseline with the newest official release before making current-year claims; this deck uses the comparable 2011 census benchmark."
+      ],
+      "source_ids": ["Census of India 2011", "National Education Policy 2020", "NSO Education in India 2017-18"]
+    },
+    {
+      "type": "evidence",
+      "title": "How to read the numbers",
+      "quote": "A person aged seven years and above who can both read and write with understanding in any language is treated as literate.",
+      "source": "Census of India 2011: Census Handbook / Primary Census Abstract",
+      "source_ids": ["Census of India 2011"]
+    }
+  ]
+}
