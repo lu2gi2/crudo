@@ -11,8 +11,8 @@ archive/
 .crudo/rules.local/
 # Local demo runtime artifacts
 demo/workspace/
- demo/output/*.pptx
- demo/mcp_server/__pycache__/
+demo/output/*.pptx
+demo/mcp_server/__pycache__/
 .crudohip/
 status-help.txt
 # Legacy Python port session scratch artifacts
