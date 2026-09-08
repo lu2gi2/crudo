@@ -7684,13 +7684,13 @@ impl LiveCli {
             |path| path.display().to_string(),
         );
         format!(
-            "\x1b[38;5;196m\
- ██████╗██╗      █████╗ ██╗    ██╗\n\
-██╔════╝██║     ██╔══██╗██║    ██║\n\
-██║     ██║     ███████║██║ █╗ ██║\n\
-██║     ██║     ██╔══██║██║███╗██║\n\
-╚██████╗███████╗██║  ██║╚███╔███╔╝\n\
- ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝\x1b[0m \x1b[38;5;208mCode\x1b[0m 🦞\n\n\
+            "\x1b[38;5;183m\
+ ██████╗██████╗ ██╗   ██╗██████╗  ██████╗\n\
+██╔════╝██╔══██╗██║   ██║██╔══██╗██╔═══██╗\n\
+██║     ██████╔╝██║   ██║██║  ██║██║   ██║\n\
+██║     ██╔══██╗██║   ██║██║  ██║██║   ██║\n\
+╚██████╗██║  ██║╚██████╔╝██████╔╝╚██████╔╝\n\
+ ╚═════╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝  ╚═════╝\x1b[0m \x1b[38;5;183mCrudo\x1b[0m ◈\n\n\
   \x1b[2mModel\x1b[0m            {}\n\
   \x1b[2mPermissions\x1b[0m      {}\n\
   \x1b[2mBranch\x1b[0m           {}\n\
@@ -7753,7 +7753,7 @@ impl LiveCli {
         let mut spinner = Spinner::new();
         let mut stdout = io::stdout();
         spinner.tick(
-            "🦀 Thinking...",
+            "◈ Thinking...",
             TerminalRenderer::new().color_theme(),
             &mut stdout,
         )?;
@@ -13648,13 +13648,17 @@ fn format_grep_result(icon: &str, parsed: &serde_json::Value) -> String {
 }
 
 fn format_generic_tool_result(icon: &str, name: &str, parsed: &serde_json::Value) -> String {
-    let rendered_output = match parsed {
-        serde_json::Value::String(text) => text.clone(),
-        serde_json::Value::Null => String::new(),
-        serde_json::Value::Object(_) | serde_json::Value::Array(_) => {
-            serde_json::to_string_pretty(parsed).unwrap_or_else(|_| parsed.to_string())
+    let rendered_output = if let Some(text) = extract_mcp_text_content(parsed) {
+        text
+    } else {
+        match parsed {
+            serde_json::Value::String(text) => text.clone(),
+            serde_json::Value::Null => String::new(),
+            serde_json::Value::Object(_) | serde_json::Value::Array(_) => {
+                serde_json::to_string_pretty(parsed).unwrap_or_else(|_| parsed.to_string())
+            }
+            _ => parsed.to_string(),
         }
-        _ => parsed.to_string(),
     };
     let preview = truncate_output_for_display(
         &rendered_output,
@@ -13669,6 +13673,29 @@ fn format_generic_tool_result(icon: &str, name: &str, parsed: &serde_json::Value
     } else {
         format!("{icon} \x1b[38;5;245m{name}:\x1b[0m {preview}")
     }
+}
+
+/// MCP tool results carry human-facing text in `content` and optional
+/// machine-readable data in `structuredContent`. The executor preserves the
+/// complete envelope for the model and JSON consumers; interactive output
+/// should show the text instead of exposing the transport envelope as JSON.
+fn extract_mcp_text_content(parsed: &serde_json::Value) -> Option<String> {
+    let object = parsed.as_object()?;
+    let content = object.get("content")?.as_array()?;
+    let texts = content
+        .iter()
+        .filter_map(|block| {
+            let block = block.as_object()?;
+            if block.get("type").and_then(serde_json::Value::as_str) != Some("text") {
+                return None;
+            }
+            block
+                .get("text")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .collect::<Vec<_>>();
+    (!texts.is_empty()).then(|| texts.join("\n"))
 }
 
 fn summarize_tool_payload(payload: &str) -> String {
@@ -18887,6 +18914,26 @@ UU conflicted.rs",
         assert!(!rendered.contains("payload 119"));
         assert!(rendered.contains("full result preserved in session"));
         assert!(output.contains("payload 119"));
+    }
+
+    #[test]
+    fn tool_rendering_extracts_mcp_human_text_from_result_envelope() {
+        let output = serde_json::json!({
+            "content": [{"type": "text", "text": "Presentation generated: demo/output/report.pptx (7 slides)"}],
+            "structuredContent": {
+                "output_path": "demo/output/report.pptx",
+                "slide_count": 7,
+                "human_review_required": true
+            },
+            "isError": false
+        })
+        .to_string();
+
+        let rendered = format_tool_result("mcp__industrial_demo__generate_presentation", &output, false);
+
+        assert!(rendered.contains("Presentation generated: demo/output/report.pptx (7 slides)"));
+        assert!(!rendered.contains("structuredContent"));
+        assert!(!rendered.contains("\\\"content\\\""));
     }
 
     #[test]
