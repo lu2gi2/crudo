@@ -299,7 +299,7 @@ impl AnthropicClient {
     ) -> Result<MessageResponse, ApiError> {
         let request = MessageRequest {
             stream: false,
-            ..request.clone()
+            ..request.maybe_strip_tools()
         };
 
         if let Some(prompt_cache) = &self.prompt_cache {
@@ -353,7 +353,8 @@ impl AnthropicClient {
         &self,
         request: &MessageRequest,
     ) -> Result<MessageStream, ApiError> {
-        self.preflight_message_request(request).await?;
+        let request = request.maybe_strip_tools();
+        self.preflight_message_request(&request).await?;
         let response = self
             .send_with_retry(&request.clone().with_streaming())
             .await?;
@@ -363,7 +364,7 @@ impl AnthropicClient {
             parser: SseParser::new().with_context("Anthropic", request.model.clone()),
             pending: VecDeque::new(),
             done: false,
-            request: request.clone(),
+            request,
             prompt_cache: self.prompt_cache.clone(),
             latest_usage: None,
             usage_recorded: false,

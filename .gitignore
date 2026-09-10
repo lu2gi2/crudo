@@ -34,3 +34,5 @@ status-help.txt
 .nuvai/discussions.jsonl
 .nuvai/reviews/
 .nuvai/audits
+
+target/

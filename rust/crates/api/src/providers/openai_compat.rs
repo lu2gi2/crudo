@@ -506,6 +506,221 @@ impl OpenAiSseParser {
     }
 }
 
+const OPEN_THINK_TAG: &str = "<think>";
+const CLOSE_THINK_TAG: &str = "</think>";
+
+fn strip_think_tags(text: &str) -> String {
+    let mut s = text.to_string();
+    for tag in &["<think>", "</think>", "<THINK>", "</THINK>"] {
+        s = s.replace(tag, "");
+    }
+    s
+}
+
+fn find_ascii_case_insensitive(haystack: &str, needle: &str) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    if haystack.len() < needle.len() {
+        return None;
+    }
+    haystack
+        .char_indices()
+        .find(|&(i, _)| {
+            haystack[i..]
+                .get(..needle.len())
+                .is_some_and(|slice| slice.eq_ignore_ascii_case(needle))
+        })
+        .map(|(i, _)| i)
+}
+
+/// Returns the length of the longest suffix of `haystack` that is a proper prefix of `tag`.
+fn longest_candidate_prefix_len(haystack: &str, tag: &str) -> usize {
+    let max_k = (tag.len() - 1).min(haystack.len());
+    for k in (1..=max_k).rev() {
+        let suffix_start = haystack.len() - k;
+        if haystack.is_char_boundary(suffix_start) {
+            let suffix = &haystack[suffix_start..];
+            if suffix.eq_ignore_ascii_case(&tag[..k]) {
+                return k;
+            }
+        }
+    }
+    0
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ThinkParserMode {
+    Text,
+    Thinking,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParsedSegment {
+    Thinking(String),
+    Text(String),
+}
+
+#[derive(Debug)]
+pub struct ThinkTagParser {
+    mode: ThinkParserMode,
+    pending: String,
+    has_emitted_non_whitespace_text: bool,
+}
+
+impl Default for ThinkTagParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ThinkTagParser {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            mode: ThinkParserMode::Text,
+            pending: String::new(),
+            has_emitted_non_whitespace_text: false,
+        }
+    }
+
+    pub fn push(&mut self, chunk: &str) -> Vec<ParsedSegment> {
+        if chunk.is_empty() {
+            return Vec::new();
+        }
+        self.pending.push_str(chunk);
+        let mut segments = Vec::new();
+
+        loop {
+            if self.pending.is_empty() {
+                break;
+            }
+
+            match self.mode {
+                ThinkParserMode::Text => {
+                    let idx_open = find_ascii_case_insensitive(&self.pending, OPEN_THINK_TAG);
+                    let idx_close = find_ascii_case_insensitive(&self.pending, CLOSE_THINK_TAG);
+
+                    match (idx_open, idx_close) {
+                        (Some(o), Some(c)) => {
+                            if o <= c {
+                                self.handle_open_tag(o, &mut segments);
+                            } else {
+                                self.handle_close_tag_in_text(c, &mut segments);
+                            }
+                        }
+                        (Some(o), None) => {
+                            self.handle_open_tag(o, &mut segments);
+                        }
+                        (None, Some(c)) => {
+                            self.handle_close_tag_in_text(c, &mut segments);
+                        }
+                        (None, None) => {
+                            let k_open =
+                                longest_candidate_prefix_len(&self.pending, OPEN_THINK_TAG);
+                            let k_close =
+                                longest_candidate_prefix_len(&self.pending, CLOSE_THINK_TAG);
+                            let k = k_open.max(k_close);
+                            if k > 0 {
+                                let emit_len = self.pending.len() - k;
+                                if emit_len > 0 {
+                                    let text = self.pending[..emit_len].to_string();
+                                    self.pending.drain(..emit_len);
+                                    self.emit_text_segment(text, &mut segments);
+                                }
+                                break;
+                            }
+                            let text = std::mem::take(&mut self.pending);
+                            self.emit_text_segment(text, &mut segments);
+                            break;
+                        }
+                    }
+                }
+                ThinkParserMode::Thinking => {
+                    if let Some(c) = find_ascii_case_insensitive(&self.pending, CLOSE_THINK_TAG) {
+                        if c > 0 {
+                            let thinking = self.pending[..c].to_string();
+                            if !thinking.is_empty() {
+                                segments.push(ParsedSegment::Thinking(thinking));
+                            }
+                        }
+                        self.pending.drain(..c + CLOSE_THINK_TAG.len());
+                        self.mode = ThinkParserMode::Text;
+                    } else {
+                        let k = longest_candidate_prefix_len(&self.pending, CLOSE_THINK_TAG);
+                        if k > 0 {
+                            let emit_len = self.pending.len() - k;
+                            if emit_len > 0 {
+                                let thinking = self.pending[..emit_len].to_string();
+                                self.pending.drain(..emit_len);
+                                if !thinking.is_empty() {
+                                    segments.push(ParsedSegment::Thinking(thinking));
+                                }
+                            }
+                            break;
+                        }
+                        let thinking = std::mem::take(&mut self.pending);
+                        if !thinking.is_empty() {
+                            segments.push(ParsedSegment::Thinking(thinking));
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        segments
+    }
+
+    fn handle_open_tag(&mut self, open_idx: usize, segments: &mut Vec<ParsedSegment>) {
+        if open_idx > 0 {
+            let before = self.pending[..open_idx].to_string();
+            if !before.trim().is_empty() || self.has_emitted_non_whitespace_text {
+                self.emit_text_segment(before, segments);
+            }
+        }
+        self.pending.drain(..open_idx + OPEN_THINK_TAG.len());
+        self.mode = ThinkParserMode::Thinking;
+    }
+
+    fn handle_close_tag_in_text(&mut self, close_idx: usize, segments: &mut Vec<ParsedSegment>) {
+        if close_idx > 0 {
+            let before = self.pending[..close_idx].to_string();
+            self.emit_text_segment(before, segments);
+        }
+        self.pending.drain(..close_idx + CLOSE_THINK_TAG.len());
+    }
+
+    fn emit_text_segment(&mut self, text: String, segments: &mut Vec<ParsedSegment>) {
+        if text.is_empty() {
+            return;
+        }
+        if !text.trim().is_empty() {
+            self.has_emitted_non_whitespace_text = true;
+        }
+        segments.push(ParsedSegment::Text(text));
+    }
+
+    #[must_use]
+    pub fn flush(&mut self) -> Vec<ParsedSegment> {
+        let mut segments = Vec::new();
+        if !self.pending.is_empty() {
+            let leftover = std::mem::take(&mut self.pending);
+            match self.mode {
+                ThinkParserMode::Text => {
+                    self.emit_text_segment(leftover, &mut segments);
+                }
+                ThinkParserMode::Thinking => {
+                    if !leftover.is_empty() {
+                        segments.push(ParsedSegment::Thinking(leftover));
+                    }
+                }
+            }
+        }
+        segments
+    }
+}
+
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug)]
 struct StreamState {
@@ -519,6 +734,7 @@ struct StreamState {
     tool_calls: BTreeMap<u32, ToolCallState>,
     thinking_started: bool,
     thinking_finished: bool,
+    think_parser: ThinkTagParser,
 }
 
 impl StreamState {
@@ -534,7 +750,51 @@ impl StreamState {
             tool_calls: BTreeMap::new(),
             thinking_started: false,
             thinking_finished: false,
+            think_parser: ThinkTagParser::new(),
         }
+    }
+
+    fn emit_thinking(&mut self, thinking: &str, events: &mut Vec<StreamEvent>) {
+        let cleaned = strip_think_tags(thinking);
+        if cleaned.is_empty() {
+            return;
+        }
+        if !self.thinking_started {
+            self.thinking_started = true;
+            events.push(StreamEvent::ContentBlockStart(ContentBlockStartEvent {
+                index: 0,
+                content_block: OutputContentBlock::Thinking {
+                    thinking: String::new(),
+                    signature: None,
+                },
+            }));
+        }
+        events.push(StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
+            index: 0,
+            delta: ContentBlockDelta::ThinkingDelta { thinking: cleaned },
+        }));
+    }
+
+    fn emit_text(&mut self, text: &str, events: &mut Vec<StreamEvent>) {
+        if text.is_empty() {
+            return;
+        }
+        self.close_thinking(events);
+        if !self.text_started {
+            self.text_started = true;
+            events.push(StreamEvent::ContentBlockStart(ContentBlockStartEvent {
+                index: self.text_block_index(),
+                content_block: OutputContentBlock::Text {
+                    text: String::new(),
+                },
+            }));
+        }
+        events.push(StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
+            index: self.text_block_index(),
+            delta: ContentBlockDelta::TextDelta {
+                text: text.to_string(),
+            },
+        }));
     }
 
     #[allow(clippy::too_many_lines)]
@@ -579,39 +839,21 @@ impl StreamState {
                     .and_then(|t| t.content)
                     .filter(|value| !value.is_empty()))
             {
-                if !self.thinking_started {
-                    self.thinking_started = true;
-                    events.push(StreamEvent::ContentBlockStart(ContentBlockStartEvent {
-                        index: 0,
-                        content_block: OutputContentBlock::Thinking {
-                            thinking: String::new(),
-                            signature: None,
-                        },
-                    }));
-                }
-                events.push(StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
-                    index: 0,
-                    delta: ContentBlockDelta::ThinkingDelta {
-                        thinking: reasoning,
-                    },
-                }));
+                self.emit_thinking(&reasoning, &mut events);
             }
 
             if let Some(content) = choice.delta.content.filter(|value| !value.is_empty()) {
-                self.close_thinking(&mut events);
-                if !self.text_started {
-                    self.text_started = true;
-                    events.push(StreamEvent::ContentBlockStart(ContentBlockStartEvent {
-                        index: self.text_block_index(),
-                        content_block: OutputContentBlock::Text {
-                            text: String::new(),
-                        },
-                    }));
+                let segments = self.think_parser.push(&content);
+                for segment in segments {
+                    match segment {
+                        ParsedSegment::Thinking(t) => {
+                            self.emit_thinking(&t, &mut events);
+                        }
+                        ParsedSegment::Text(text) => {
+                            self.emit_text(&text, &mut events);
+                        }
+                    }
                 }
-                events.push(StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
-                    index: self.text_block_index(),
-                    delta: ContentBlockDelta::TextDelta { text: content },
-                }));
             }
 
             for tool_call in choice.delta.tool_calls {
@@ -665,6 +907,16 @@ impl StreamState {
         self.finished = true;
 
         let mut events = Vec::new();
+        for segment in self.think_parser.flush() {
+            match segment {
+                ParsedSegment::Thinking(t) => {
+                    self.emit_thinking(&t, &mut events);
+                }
+                ParsedSegment::Text(text) => {
+                    self.emit_text(&text, &mut events);
+                }
+            }
+        }
         self.close_thinking(&mut events);
         if self.text_started && !self.text_finished {
             self.text_finished = true;
@@ -1177,12 +1429,14 @@ fn build_chat_completion_request_for_base_url(
         payload["stream_options"] = json!({ "include_usage": true });
     }
 
-    if let Some(tools) = &request.tools {
-        payload["tools"] =
-            Value::Array(tools.iter().map(openai_tool_definition).collect::<Vec<_>>());
-    }
-    if let Some(tool_choice) = &request.tool_choice {
-        payload["tool_choice"] = openai_tool_choice(tool_choice);
+    if !crate::types::should_disable_tools() {
+        if let Some(tools) = &request.tools {
+            payload["tools"] =
+                Value::Array(tools.iter().map(openai_tool_definition).collect::<Vec<_>>());
+        }
+        if let Some(tool_choice) = &request.tool_choice {
+            payload["tool_choice"] = openai_tool_choice(tool_choice);
+        }
     }
 
     // OpenAI-compatible tuning parameters — only included when explicitly set.
@@ -1511,19 +1765,44 @@ fn normalize_response(
             "chat completion response missing choices",
         ))?;
     let mut content = Vec::new();
-    if let Some(thinking) = choice
+    let mut initial_thinking = choice
         .message
         .reasoning_content
         .filter(|value| !value.is_empty())
         .or(choice.message.reasoning.filter(|value| !value.is_empty()))
-    {
-        content.push(OutputContentBlock::Thinking {
-            thinking,
-            signature: None,
-        });
-    }
+        .map(|r| strip_think_tags(&r))
+        .filter(|r| !r.is_empty());
+
     if let Some(text) = choice.message.content.filter(|value| !value.is_empty()) {
-        content.push(OutputContentBlock::Text { text });
+        let mut parser = ThinkTagParser::new();
+        let mut segments = parser.push(&text);
+        segments.extend(parser.flush());
+
+        for segment in segments {
+            match segment {
+                ParsedSegment::Thinking(t) => {
+                    if let Some(ref mut init) = initial_thinking {
+                        init.push('\n');
+                        init.push_str(&t);
+                    } else {
+                        initial_thinking = Some(t);
+                    }
+                }
+                ParsedSegment::Text(t) => {
+                    content.push(OutputContentBlock::Text { text: t });
+                }
+            }
+        }
+    }
+
+    if let Some(thinking) = initial_thinking {
+        content.insert(
+            0,
+            OutputContentBlock::Thinking {
+                thinking,
+                signature: None,
+            },
+        );
     }
     for tool_call in choice.message.tool_calls {
         content.push(OutputContentBlock::ToolUse {
@@ -1841,7 +2120,7 @@ mod tests {
         build_chat_completion_request, chat_completions_endpoint, is_reasoning_model,
         model_requires_reasoning_content_in_history, normalize_finish_reason, normalize_response,
         openai_tool_choice, parse_tool_arguments, OpenAiCompatClient, OpenAiCompatConfig,
-        StreamState,
+        ParsedSegment, StreamState, ThinkTagParser,
     };
     use crate::error::ApiError;
     use crate::types::{
@@ -2105,6 +2384,157 @@ mod tests {
             events[6],
             StreamEvent::ContentBlockStop(ContentBlockStopEvent { index: 1 })
         ));
+    }
+
+    #[test]
+    fn think_tag_parser_handles_normal_text() {
+        let mut parser = ThinkTagParser::new();
+        let segments = parser.push("Hello world");
+        assert_eq!(
+            segments,
+            vec![ParsedSegment::Text("Hello world".to_string())]
+        );
+        assert!(parser.flush().is_empty());
+    }
+
+    #[test]
+    fn think_tag_parser_handles_complete_think_tags_in_single_chunk() {
+        let mut parser = ThinkTagParser::new();
+        let segments = parser.push("<think>my internal thought</think>final answer");
+        assert_eq!(
+            segments,
+            vec![
+                ParsedSegment::Thinking("my internal thought".to_string()),
+                ParsedSegment::Text("final answer".to_string()),
+            ]
+        );
+        assert!(parser.flush().is_empty());
+    }
+
+    #[test]
+    fn think_tag_parser_handles_split_think_tags_across_chunks() {
+        let mut parser = ThinkTagParser::new();
+        // Chunk 1: partial opening tag
+        let s1 = parser.push("<th");
+        assert!(s1.is_empty());
+
+        // Chunk 2: rest of opening tag + internal reasoning + partial closing tag
+        let s2 = parser.push("ink>internal reasoning...</thi");
+        assert_eq!(
+            s2,
+            vec![ParsedSegment::Thinking("internal reasoning...".to_string())]
+        );
+
+        // Chunk 3: rest of closing tag + final answer
+        let s3 = parser.push("nk>final answer");
+        assert_eq!(s3, vec![ParsedSegment::Text("final answer".to_string())]);
+
+        assert!(parser.flush().is_empty());
+    }
+
+    #[test]
+    fn think_tag_parser_ignores_leading_whitespace_before_think_tag() {
+        let mut parser = ThinkTagParser::new();
+        let s1 = parser.push("\n\n<think>reasoning</think>answer");
+        assert_eq!(
+            s1,
+            vec![
+                ParsedSegment::Thinking("reasoning".to_string()),
+                ParsedSegment::Text("answer".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn stream_state_split_think_tags_emits_thinking_and_text_without_literal_tags() {
+        let mut state = StreamState::new("qwen3:4b".to_string());
+        let chunks = vec![
+            super::ChatCompletionChunk {
+                id: "1".to_string(),
+                model: Some("qwen3:4b".to_string()),
+                choices: vec![super::ChunkChoice {
+                    delta: super::ChunkDelta {
+                        content: Some("<th".to_string()),
+                        reasoning_content: None,
+                        reasoning: None,
+                        thinking: None,
+                        tool_calls: Vec::new(),
+                    },
+                    finish_reason: None,
+                }],
+                usage: None,
+            },
+            super::ChatCompletionChunk {
+                id: "2".to_string(),
+                model: None,
+                choices: vec![super::ChunkChoice {
+                    delta: super::ChunkDelta {
+                        content: Some("ink>internal reasoning...</thi".to_string()),
+                        reasoning_content: None,
+                        reasoning: None,
+                        thinking: None,
+                        tool_calls: Vec::new(),
+                    },
+                    finish_reason: None,
+                }],
+                usage: None,
+            },
+            super::ChatCompletionChunk {
+                id: "3".to_string(),
+                model: None,
+                choices: vec![super::ChunkChoice {
+                    delta: super::ChunkDelta {
+                        content: Some("nk>final answer".to_string()),
+                        reasoning_content: None,
+                        reasoning: None,
+                        thinking: None,
+                        tool_calls: Vec::new(),
+                    },
+                    finish_reason: Some("stop".to_string()),
+                }],
+                usage: None,
+            },
+        ];
+
+        let mut events = Vec::new();
+        for chunk in chunks {
+            events.extend(state.ingest_chunk(chunk).expect("ingest"));
+        }
+        events.extend(state.finish().expect("finish"));
+
+        let mut thinking_deltas = Vec::new();
+        let mut text_deltas = Vec::new();
+
+        for event in &events {
+            match event {
+                StreamEvent::ContentBlockDelta(d) => match &d.delta {
+                    ContentBlockDelta::ThinkingDelta { thinking } => {
+                        thinking_deltas.push(thinking.clone());
+                    }
+                    ContentBlockDelta::TextDelta { text } => {
+                        text_deltas.push(text.clone());
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+
+        let total_thinking = thinking_deltas.join("");
+        let total_text = text_deltas.join("");
+
+        assert_eq!(total_thinking, "internal reasoning...");
+        assert_eq!(total_text, "final answer");
+
+        // Ensure literal tags never appear in text_deltas
+        for delta in &text_deltas {
+            assert!(!delta.contains("<think>"));
+            assert!(!delta.contains("</think>"));
+            assert!(!delta.contains("<th"));
+            assert!(!delta.contains("ink>"));
+            assert!(!delta.contains("</thi"));
+            assert!(!delta.contains("nk>"));
+        }
     }
 
     #[test]

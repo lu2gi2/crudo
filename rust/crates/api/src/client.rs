@@ -92,9 +92,10 @@ impl ProviderClient {
         &self,
         request: &MessageRequest,
     ) -> Result<MessageResponse, ApiError> {
+        let request = request.maybe_strip_tools();
         match self {
-            Self::Anthropic(client) => client.send_message(request).await,
-            Self::Xai(client) | Self::OpenAi(client) => client.send_message(request).await,
+            Self::Anthropic(client) => client.send_message(&request).await,
+            Self::Xai(client) | Self::OpenAi(client) => client.send_message(&request).await,
         }
     }
 
@@ -102,13 +103,14 @@ impl ProviderClient {
         &self,
         request: &MessageRequest,
     ) -> Result<MessageStream, ApiError> {
+        let request = request.maybe_strip_tools();
         match self {
             Self::Anthropic(client) => client
-                .stream_message(request)
+                .stream_message(&request)
                 .await
                 .map(MessageStream::Anthropic),
             Self::Xai(client) | Self::OpenAi(client) => client
-                .stream_message(request)
+                .stream_message(&request)
                 .await
                 .map(MessageStream::OpenAiCompat),
         }

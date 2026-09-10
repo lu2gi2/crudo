@@ -49,6 +49,50 @@ impl MessageRequest {
         self.stream = true;
         self
     }
+
+    /// Return a copy of this request with tool definitions stripped if `CRUDO_DISABLE_TOOLS` is active.
+    #[must_use]
+    pub fn maybe_strip_tools(&self) -> Self {
+        self.maybe_strip_tools_with_lookup(|key| std::env::var(key).ok())
+    }
+
+    /// Return a copy of this request with tool definitions stripped according to the provided env lookup.
+    #[must_use]
+    pub fn maybe_strip_tools_with_lookup<F>(&self, lookup: F) -> Self
+    where
+        F: FnMut(&str) -> Option<String>,
+    {
+        if should_disable_tools_from_lookup(lookup) {
+            Self {
+                tools: None,
+                tool_choice: None,
+                ..self.clone()
+            }
+        } else {
+            self.clone()
+        }
+    }
+}
+
+/// Check if tool definitions should be disabled for outgoing provider requests.
+///
+/// Returns true when `CRUDO_DISABLE_TOOLS` is set to `"1"`, `"true"`, or `"TRUE"`.
+/// When absent or any other value, returns false.
+#[must_use]
+pub fn should_disable_tools() -> bool {
+    should_disable_tools_from_lookup(|key| std::env::var(key).ok())
+}
+
+/// Check if tool definitions should be disabled given an environment lookup function.
+#[must_use]
+pub fn should_disable_tools_from_lookup<F>(mut lookup: F) -> bool
+where
+    F: FnMut(&str) -> Option<String>,
+{
+    lookup("CRUDO_DISABLE_TOOLS")
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|val| val == "1" || val.eq_ignore_ascii_case("true"))
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -285,7 +329,10 @@ mod tests {
     use runtime::format_usd;
     use serde_json::json;
 
-    use super::{InputContentBlock, MessageResponse, Usage};
+    use super::{
+        should_disable_tools_from_lookup, InputContentBlock, MessageRequest, MessageResponse,
+        ToolChoice, ToolDefinition, Usage,
+    };
 
     #[test]
     fn usage_total_tokens_includes_cache_tokens() {
@@ -351,5 +398,118 @@ mod tests {
             })
         );
         assert_eq!(deserialized, block);
+    }
+
+    #[test]
+    fn tools_remain_enabled_by_default() {
+        let lookup = |_: &str| None;
+        assert!(!should_disable_tools_from_lookup(lookup));
+
+        let req = MessageRequest {
+            tools: Some(vec![ToolDefinition {
+                name: "bash".to_string(),
+                description: Some("execute command".to_string()),
+                input_schema: json!({}),
+            }]),
+            tool_choice: Some(ToolChoice::Auto),
+            ..Default::default()
+        };
+        let stripped = req.maybe_strip_tools_with_lookup(lookup);
+        assert!(stripped.tools.is_some());
+        assert_eq!(stripped.tools.as_ref().unwrap().len(), 1);
+        assert!(stripped.tool_choice.is_some());
+    }
+
+    #[test]
+    fn crudo_disable_tools_1_disables_tools() {
+        let lookup = |key: &str| (key == "CRUDO_DISABLE_TOOLS").then(|| "1".to_string());
+        assert!(should_disable_tools_from_lookup(lookup));
+
+        let req = MessageRequest {
+            tools: Some(vec![ToolDefinition {
+                name: "bash".to_string(),
+                description: Some("execute command".to_string()),
+                input_schema: json!({}),
+            }]),
+            tool_choice: Some(ToolChoice::Auto),
+            ..Default::default()
+        };
+        let stripped = req.maybe_strip_tools_with_lookup(lookup);
+        assert!(stripped.tools.is_none());
+        assert!(stripped.tool_choice.is_none());
+    }
+
+    #[test]
+    fn crudo_disable_tools_true_disables_tools() {
+        let lookup_lower = |key: &str| (key == "CRUDO_DISABLE_TOOLS").then(|| "true".to_string());
+        assert!(should_disable_tools_from_lookup(lookup_lower));
+
+        let lookup_upper = |key: &str| (key == "CRUDO_DISABLE_TOOLS").then(|| "TRUE".to_string());
+        assert!(should_disable_tools_from_lookup(lookup_upper));
+
+        let lookup_mixed = |key: &str| (key == "CRUDO_DISABLE_TOOLS").then(|| "True".to_string());
+        assert!(should_disable_tools_from_lookup(lookup_mixed));
+
+        let req = MessageRequest {
+            tools: Some(vec![ToolDefinition {
+                name: "bash".to_string(),
+                description: Some("execute command".to_string()),
+                input_schema: json!({}),
+            }]),
+            tool_choice: Some(ToolChoice::Auto),
+            ..Default::default()
+        };
+        let stripped = req.maybe_strip_tools_with_lookup(lookup_upper);
+        assert!(stripped.tools.is_none());
+        assert!(stripped.tool_choice.is_none());
+    }
+
+    #[test]
+    fn invalid_value_does_not_disable_tools() {
+        for invalid in &["0", "false", "FALSE", "no", "invalid", "", "2", "random"] {
+            let lookup = |key: &str| (key == "CRUDO_DISABLE_TOOLS").then(|| (*invalid).to_string());
+            assert!(
+                !should_disable_tools_from_lookup(lookup),
+                "value `{invalid}` should not disable tools"
+            );
+
+            let req = MessageRequest {
+                tools: Some(vec![ToolDefinition {
+                    name: "bash".to_string(),
+                    description: Some("execute command".to_string()),
+                    input_schema: json!({}),
+                }]),
+                tool_choice: Some(ToolChoice::Auto),
+                ..Default::default()
+            };
+            let stripped = req.maybe_strip_tools_with_lookup(lookup);
+            assert!(stripped.tools.is_some());
+            assert!(stripped.tool_choice.is_some());
+        }
+    }
+
+    #[test]
+    fn tool_definitions_are_still_generated_normally_when_disabled_mode_is_off() {
+        let lookup = |_: &str| None;
+        let req = MessageRequest {
+            tools: Some(vec![
+                ToolDefinition {
+                    name: "read_file".to_string(),
+                    description: Some("Read a file".to_string()),
+                    input_schema: json!({"type": "object"}),
+                },
+                ToolDefinition {
+                    name: "write_file".to_string(),
+                    description: Some("Write a file".to_string()),
+                    input_schema: json!({"type": "object"}),
+                },
+            ]),
+            tool_choice: Some(ToolChoice::Auto),
+            ..Default::default()
+        };
+        let processed = req.maybe_strip_tools_with_lookup(lookup);
+        assert_eq!(processed.tools.as_ref().unwrap().len(), 2);
+        assert_eq!(processed.tools.as_ref().unwrap()[0].name, "read_file");
+        assert_eq!(processed.tools.as_ref().unwrap()[1].name, "write_file");
     }
 }

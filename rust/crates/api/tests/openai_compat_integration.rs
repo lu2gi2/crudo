@@ -515,6 +515,94 @@ async fn stream_message_preserves_ollama_reasoning_before_text() {
     assert_eq!(body["stream"], json!(true));
 }
 
+#[tokio::test]
+async fn stream_message_preserves_qwen3_think_tags_split_across_chunks() {
+    let state = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
+    let sse = concat!(
+        "data: {\"id\":\"chatcmpl_qwen3_think\",\"model\":\"qwen3:4b\",\"choices\":[{\"delta\":{\"content\":\"<th\"}}]}\n\n",
+        "data: {\"id\":\"chatcmpl_qwen3_think\",\"choices\":[{\"delta\":{\"content\":\"ink>internal reasoning...</thi\"}}]}\n\n",
+        "data: {\"id\":\"chatcmpl_qwen3_think\",\"choices\":[{\"delta\":{\"content\":\"nk>Final answer.\"}}]}\n\n",
+        "data: {\"id\":\"chatcmpl_qwen3_think\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+        "data: [DONE]\n\n"
+    );
+    let server = spawn_server(
+        state.clone(),
+        vec![http_response_with_headers(
+            "200 OK",
+            "text/event-stream",
+            sse,
+            &[("x-request-id", "req_qwen3_think_stream")],
+        )],
+    )
+    .await;
+
+    let client = OpenAiCompatClient::new("ollama-test-key", OpenAiCompatConfig::openai())
+        .with_base_url(server.base_url());
+    let mut stream = client
+        .stream_message(&MessageRequest {
+            model: "openai/qwen3:4b".to_string(),
+            ..sample_request(false)
+        })
+        .await
+        .expect("stream should start");
+
+    let mut events = Vec::new();
+    while let Some(event) = stream.next_event().await.expect("event should parse") {
+        events.push(event);
+    }
+
+    assert!(matches!(events[0], StreamEvent::MessageStart(_)));
+    assert!(matches!(
+        events[1],
+        StreamEvent::ContentBlockStart(ContentBlockStartEvent {
+            index: 0,
+            content_block: OutputContentBlock::Thinking { .. },
+        })
+    ));
+    assert!(matches!(
+        events[2],
+        StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
+            index: 0,
+            delta: ContentBlockDelta::ThinkingDelta { .. },
+        })
+    ));
+    assert!(matches!(
+        events[3],
+        StreamEvent::ContentBlockStop(ContentBlockStopEvent { index: 0 })
+    ));
+    assert!(matches!(
+        events[4],
+        StreamEvent::ContentBlockStart(ContentBlockStartEvent {
+            index: 1,
+            content_block: OutputContentBlock::Text { .. },
+        })
+    ));
+    assert!(matches!(
+        events[5],
+        StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
+            index: 1,
+            delta: ContentBlockDelta::TextDelta { .. },
+        })
+    ));
+
+    // Verify thinking content and text content
+    let mut thinking_text = String::new();
+    let mut answer_text = String::new();
+    for event in &events {
+        if let StreamEvent::ContentBlockDelta(d) = event {
+            match &d.delta {
+                ContentBlockDelta::ThinkingDelta { thinking } => thinking_text.push_str(thinking),
+                ContentBlockDelta::TextDelta { text } => answer_text.push_str(text),
+                _ => {}
+            }
+        }
+    }
+    assert_eq!(thinking_text, "internal reasoning...");
+    assert_eq!(answer_text, "Final answer.");
+    assert!(!answer_text.contains("<think>"));
+    assert!(!answer_text.contains("</think>"));
+}
+
 #[allow(clippy::await_holding_lock)]
 #[tokio::test]
 async fn stream_message_retries_retryable_sse_handshake_failures() {

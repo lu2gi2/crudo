@@ -23,31 +23,53 @@ pub struct TimeoutConfig {
     pub request_timeout: Duration,
 }
 
+const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 30;
+const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 300;
+
+fn parse_timeout_secs(val: &str) -> Option<u64> {
+    let trimmed = val.trim();
+    if trimmed.starts_with('-') {
+        return None;
+    }
+    trimmed.parse::<u64>().ok().filter(|&s| s > 0)
+}
+
 impl Default for TimeoutConfig {
     fn default() -> Self {
         Self {
-            connect_timeout: Duration::from_secs(30),
-            request_timeout: Duration::from_secs(300),
+            connect_timeout: Duration::from_secs(DEFAULT_CONNECT_TIMEOUT_SECS),
+            request_timeout: Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECS),
         }
     }
 }
 
 impl TimeoutConfig {
     /// Read timeout settings from the process environment.
-    /// - `CRUDO_API_CONNECT_TIMEOUT` — connect timeout in seconds
-    /// - `CRUDO_API_REQUEST_TIMEOUT` — overall request timeout in seconds
+    /// - `CRUDO_REQUEST_TIMEOUT_SECS` (or `CRUDO_API_REQUEST_TIMEOUT`) — overall request timeout in seconds (default: 300)
+    /// - `CRUDO_API_CONNECT_TIMEOUT` (or `CRUDO_CONNECT_TIMEOUT_SECS`) — connect timeout in seconds (default: 30)
     #[must_use]
     pub fn from_env() -> Self {
-        let connect_timeout = std::env::var("CRUDO_API_CONNECT_TIMEOUT")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
+        Self::from_lookup(|key| std::env::var(key).ok())
+    }
+
+    fn from_lookup<F>(mut lookup: F) -> Self
+    where
+        F: FnMut(&str) -> Option<String>,
+    {
+        let connect_timeout = lookup("CRUDO_CONNECT_TIMEOUT_SECS")
+            .or_else(|| lookup("CRUDO_API_CONNECT_TIMEOUT"))
+            .as_deref()
+            .and_then(parse_timeout_secs)
             .map(Duration::from_secs)
-            .unwrap_or(Duration::from_secs(30));
-        let request_timeout = std::env::var("CRUDO_API_REQUEST_TIMEOUT")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(Duration::from_secs(DEFAULT_CONNECT_TIMEOUT_SECS));
+
+        let request_timeout = lookup("CRUDO_REQUEST_TIMEOUT_SECS")
+            .or_else(|| lookup("CRUDO_API_REQUEST_TIMEOUT"))
+            .as_deref()
+            .and_then(parse_timeout_secs)
             .map(Duration::from_secs)
-            .unwrap_or(Duration::from_secs(300));
+            .unwrap_or(Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECS));
+
         Self {
             connect_timeout,
             request_timeout,
@@ -362,11 +384,69 @@ mod tests {
         );
     }
 
+    fn timeout_config_from_map(pairs: &[(&str, &str)]) -> TimeoutConfig {
+        let map: HashMap<String, String> = pairs
+            .iter()
+            .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+            .collect();
+        TimeoutConfig::from_lookup(|key| map.get(key).cloned())
+    }
+
     #[test]
     fn timeout_config_defaults() {
         let config = TimeoutConfig::default();
         assert_eq!(config.connect_timeout, std::time::Duration::from_secs(30));
         assert_eq!(config.request_timeout, std::time::Duration::from_secs(300));
+    }
+
+    #[test]
+    fn timeout_config_default_is_300_seconds_when_env_empty() {
+        let config = timeout_config_from_map(&[]);
+        assert_eq!(config.connect_timeout, std::time::Duration::from_secs(30));
+        assert_eq!(config.request_timeout, std::time::Duration::from_secs(300));
+    }
+
+    #[test]
+    fn timeout_config_valid_crudo_request_timeout_secs_is_respected() {
+        let config = timeout_config_from_map(&[("CRUDO_REQUEST_TIMEOUT_SECS", "900")]);
+        assert_eq!(config.request_timeout, std::time::Duration::from_secs(900));
+        assert_eq!(config.connect_timeout, std::time::Duration::from_secs(30));
+    }
+
+    #[test]
+    fn timeout_config_invalid_value_falls_back_to_300_seconds() {
+        let config = timeout_config_from_map(&[("CRUDO_REQUEST_TIMEOUT_SECS", "invalid_value")]);
+        assert_eq!(config.request_timeout, std::time::Duration::from_secs(300));
+
+        let empty_config = timeout_config_from_map(&[("CRUDO_REQUEST_TIMEOUT_SECS", "")]);
+        assert_eq!(
+            empty_config.request_timeout,
+            std::time::Duration::from_secs(300)
+        );
+
+        let float_config = timeout_config_from_map(&[("CRUDO_REQUEST_TIMEOUT_SECS", "300.5")]);
+        assert_eq!(
+            float_config.request_timeout,
+            std::time::Duration::from_secs(300)
+        );
+    }
+
+    #[test]
+    fn timeout_config_zero_and_negative_values_fall_back_safely() {
+        let zero_config = timeout_config_from_map(&[("CRUDO_REQUEST_TIMEOUT_SECS", "0")]);
+        assert_eq!(
+            zero_config.request_timeout,
+            std::time::Duration::from_secs(300)
+        );
+
+        let neg_one = timeout_config_from_map(&[("CRUDO_REQUEST_TIMEOUT_SECS", "-1")]);
+        assert_eq!(neg_one.request_timeout, std::time::Duration::from_secs(300));
+
+        let neg_large = timeout_config_from_map(&[("CRUDO_REQUEST_TIMEOUT_SECS", "-999999")]);
+        assert_eq!(
+            neg_large.request_timeout,
+            std::time::Duration::from_secs(300)
+        );
     }
 
     #[test]
