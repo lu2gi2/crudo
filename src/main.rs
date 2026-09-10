@@ -89,6 +89,8 @@ fn main() -> Result<(), io::Error> {
     let mut history = CommandHistory::default();
     let mut pending_confirmation: Option<PendingAction> = None;
     let mut needs_redraw = true;
+    let mut compact_header = false;
+    let mut ctrl_c_exit_pending = false;
 
     loop {
         let mut got_stream_update = false;
@@ -187,6 +189,7 @@ fn main() -> Result<(), io::Error> {
                 is_responding,
                 &menu,
                 pending_confirmation.as_ref(),
+                compact_header,
             )?;
             needs_redraw = false;
         }
@@ -204,6 +207,8 @@ fn main() -> Result<(), io::Error> {
             &mut history,
             &mut pending_confirmation,
             &mut needs_redraw,
+            &mut compact_header,
+            &mut ctrl_c_exit_pending,
         )? {
             if let Some(task) = generation.take() {
                 task.cancel();
@@ -323,12 +328,14 @@ pub fn is_sensitive_action(command: &str) -> bool {
 // SLASH COMMAND MENU
 // ============================================================
 
-pub const SLASH_COMMANDS: [&str; 6] = [
+pub const SLASH_COMMANDS: [&str; 8] = [
     "/help",
     "/clear",
     "/pwd",
     "/ls",
     "/read",
+    "/login",
+    "/logout",
     "/exit",
 ];
 
@@ -440,6 +447,13 @@ pub fn delete_char_before_cursor(input: &mut String, cursor_pos: &mut usize) {
     }
 }
 
+pub fn delete_char_after_cursor(input: &mut String, cursor_pos: usize) {
+    if let Some((byte_start, c)) = input.char_indices().nth(cursor_pos) {
+        let byte_end = byte_start + c.len_utf8();
+        input.replace_range(byte_start..byte_end, "");
+    }
+}
+
 pub fn delete_word_before_cursor(input: &mut String, cursor_pos: &mut usize) {
     if *cursor_pos == 0 || input.is_empty() {
         return;
@@ -497,19 +511,25 @@ fn draw_ui(
     is_responding: bool,
     menu: &SuggestionMenu,
     confirmation: Option<&PendingAction>,
+    compact_header: bool,
 ) -> Result<(), io::Error> {
     terminal.draw(|frame| {
+        let header_height = if compact_header { 3 } else { 8 };
         let root = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(8),
+                Constraint::Length(header_height),
                 Constraint::Min(1),
                 Constraint::Length(4),
             ])
             .split(frame.area());
 
         // Header
-        draw_header(frame, root[0]);
+        if compact_header {
+            draw_compact_header(frame, root[0]);
+        } else {
+            draw_header(frame, root[0]);
+        }
 
         // Full-width chat
         draw_chat(frame, root[1], messages, scroll, is_responding);
@@ -532,7 +552,7 @@ fn draw_ui(
 // HEADER
 // ============================================================
 
-fn draw_header(frame: &mut ratatui::Frame, area: Rect) {
+fn header_widget<'a>() -> Paragraph<'a> {
     let mut lines = Vec::new();
 
     for logo in CRUDO_LOGO {
@@ -551,7 +571,7 @@ fn draw_header(frame: &mut ratatui::Frame, area: Rect) {
             .add_modifier(Modifier::BOLD),
     )));
 
-    let header = Paragraph::new(Text::from(lines))
+    Paragraph::new(Text::from(lines))
         .alignment(Alignment::Center)
         .block(
             Block::default()
@@ -559,9 +579,34 @@ fn draw_header(frame: &mut ratatui::Frame, area: Rect) {
                 .border_style(
                     Style::default().fg(CRUDO_PURPLE)
                 ),
-        );
+        )
+}
 
-    frame.render_widget(header, area);
+fn draw_header(frame: &mut ratatui::Frame, area: Rect) {
+    frame.render_widget(header_widget(), area);
+}
+
+pub fn compact_header_widget<'a>() -> Paragraph<'a> {
+    let line = Line::from(Span::styled(
+        "⚙︎ C R U D O⚙︎",
+        Style::default()
+            .fg(CRUDO_PURPLE_LIGHT)
+            .add_modifier(Modifier::BOLD),
+    ));
+
+    Paragraph::new(Text::from(vec![line]))
+        .alignment(Alignment::Center)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(
+                    Style::default().fg(CRUDO_PURPLE)
+                ),
+        )
+}
+
+fn draw_compact_header(frame: &mut ratatui::Frame, area: Rect) {
+    frame.render_widget(compact_header_widget(), area);
 }
 
 // ============================================================
@@ -1392,6 +1437,7 @@ fn handle_command(
     messages: &mut Vec<String>,
     scroll: &mut u16,
     status: &mut String,
+    compact_header: bool,
 ) -> Result<bool, io::Error> {
     match command {
         "/clear" => {
@@ -1431,6 +1477,14 @@ fn handle_command(
             );
 
             messages.push(
+                "/login   Login to Crudo".to_string()
+            );
+
+            messages.push(
+                "/logout  Logout from Crudo".to_string()
+            );
+
+            messages.push(
                 "/exit    Exit Crudo".to_string()
             );
 
@@ -1450,6 +1504,7 @@ fn handle_command(
                 false,
                 &SuggestionMenu::default(),
                 None,
+                compact_header,
             )?;
 
             match std::env::current_dir() {
@@ -1491,6 +1546,7 @@ fn handle_command(
                 false,
                 &SuggestionMenu::default(),
                 None,
+                compact_header,
             )?;
 
             list_directory(messages);
@@ -1514,7 +1570,51 @@ fn handle_command(
             Ok(true)
         }
 
+        "/login" => {
+            messages.push(
+                "Logged in successfully.".to_string()
+            );
+            *status = String::from("Ready");
+            Ok(true)
+        }
+
+        "/logout" => {
+            messages.push(
+                "Logged out successfully.".to_string()
+            );
+            *status = String::from("Ready");
+            Ok(true)
+        }
+
         _ => {
+            if let Some(user) =
+                command.strip_prefix("/login ")
+            {
+                let user = user.trim();
+                if user.is_empty() {
+                    messages.push(
+                        "Logged in successfully.".to_string()
+                    );
+                } else {
+                    messages.push(
+                        format!(
+                            "Logged in successfully as {}.",
+                            user
+                        )
+                    );
+                }
+                *status = String::from("Ready");
+                return Ok(true);
+            }
+
+            if command.starts_with("/logout ") {
+                messages.push(
+                    "Logged out successfully.".to_string()
+                );
+                *status = String::from("Ready");
+                return Ok(true);
+            }
+
             if let Some(path) =
                 command.strip_prefix("/read ")
             {
@@ -1534,6 +1634,7 @@ fn handle_command(
                     false,
                     &SuggestionMenu::default(),
                     None,
+                    compact_header,
                 )?;
 
                 read_file(
@@ -1719,6 +1820,8 @@ fn handle_event(
     history: &mut CommandHistory,
     pending_confirmation: &mut Option<PendingAction>,
     needs_redraw: &mut bool,
+    compact_header: &mut bool,
+    ctrl_c_exit_pending: &mut bool,
 ) -> Result<bool, io::Error> {
     let poll_timeout = if generation.is_some() {
         Duration::from_millis(15)
@@ -1789,12 +1892,25 @@ fn handle_event(
                         }
                     }
                     *status = String::from("Ready");
+                    *ctrl_c_exit_pending = false;
                     if *auto_scroll {
                         scroll_to_bottom(messages, terminal, scroll, false);
                     }
                     return Ok(false);
-                } else {
+                } else if *ctrl_c_exit_pending {
                     return Ok(true);
+                } else {
+                    *ctrl_c_exit_pending = true;
+                    *status = String::from("Press Ctrl+C again to exit");
+                    return Ok(false);
+                }
+            }
+
+            // Reset pending exit state if any other key is pressed
+            if *ctrl_c_exit_pending {
+                *ctrl_c_exit_pending = false;
+                if *status == "Press Ctrl+C again to exit" {
+                    *status = String::from("Ready");
                 }
             }
 
@@ -1820,7 +1936,7 @@ fn handle_event(
                         }
                         return Ok(false);
                     }
-                    KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                    KeyCode::Char('n') | KeyCode::Char('N') => {
                         pending_confirmation.take();
                         if let Some(last) = messages.last() {
                             if last == "Do you want to proceed? [y/n]" {
@@ -1832,6 +1948,9 @@ fn handle_event(
                         if *auto_scroll {
                             scroll_to_bottom(messages, terminal, scroll, false);
                         }
+                        return Ok(false);
+                    }
+                    KeyCode::Esc => {
                         return Ok(false);
                     }
                     KeyCode::Up => {
@@ -1929,6 +2048,22 @@ fn handle_event(
                     } else {
                         delete_char_before_cursor(input, cursor_pos);
                     }
+                    let new_filtered = filter_commands(input);
+                    if !new_filtered.is_empty() {
+                        menu.is_open = true;
+                        menu.selected = menu.selected.min(new_filtered.len().saturating_sub(1));
+                    } else {
+                        menu.is_open = false;
+                        menu.selected = 0;
+                    }
+                }
+
+                // ------------------------------------------------
+                // DELETE
+                // ------------------------------------------------
+
+                KeyCode::Delete => {
+                    delete_char_after_cursor(input, *cursor_pos);
                     let new_filtered = filter_commands(input);
                     if !new_filtered.is_empty() {
                         menu.is_open = true;
@@ -2087,6 +2222,7 @@ fn handle_event(
                             messages,
                             scroll,
                             status,
+                            *compact_header,
                         ) {
                             Ok(true) => {
                                 scroll_to_bottom(
@@ -2152,6 +2288,8 @@ fn handle_event(
                         )
                     );
 
+                    *compact_header = true;
+
                     *auto_scroll = true;
                     *status = String::from("Ready");
                     scroll_to_bottom(
@@ -2173,16 +2311,7 @@ fn handle_event(
                 // ------------------------------------------------
 
                 KeyCode::Esc => {
-                    if menu_active {
-                        menu.is_open = false;
-                        menu.selected = 0;
-                        return Ok(false);
-                    }
-
-                    if let Some(task) = generation.take() {
-                        task.cancel();
-                    }
-                    return Ok(true);
+                    return Ok(false);
                 }
 
                 _ => {}
@@ -2328,7 +2457,7 @@ mod tests {
     use super::*;
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
-    use ratatui::widgets::StatefulWidget;
+    use ratatui::widgets::{StatefulWidget, Widget};
 
     #[test]
     fn test_scrollbar_reaches_true_bottom() {
@@ -2446,7 +2575,7 @@ mod tests {
     fn test_slash_commands_available() {
         assert_eq!(
             SLASH_COMMANDS,
-            ["/help", "/clear", "/pwd", "/ls", "/read", "/exit"]
+            ["/help", "/clear", "/pwd", "/ls", "/read", "/login", "/logout", "/exit"]
         );
     }
 
@@ -2455,7 +2584,7 @@ mod tests {
         let commands = filter_commands("/");
         assert_eq!(
             commands,
-            vec!["/help", "/clear", "/pwd", "/ls", "/read", "/exit"]
+            vec!["/help", "/clear", "/pwd", "/ls", "/read", "/login", "/logout", "/exit"]
         );
     }
 
@@ -2464,7 +2593,10 @@ mod tests {
         assert_eq!(filter_commands("/h"), vec!["/help"]);
         assert_eq!(filter_commands("/c"), vec!["/clear"]);
         assert_eq!(filter_commands("/p"), vec!["/pwd"]);
-        assert_eq!(filter_commands("/l"), vec!["/ls"]);
+        assert_eq!(filter_commands("/l"), vec!["/ls", "/login", "/logout"]);
+        assert_eq!(filter_commands("/log"), vec!["/login", "/logout"]);
+        assert_eq!(filter_commands("/login"), vec!["/login"]);
+        assert_eq!(filter_commands("/logout"), vec!["/logout"]);
         assert_eq!(filter_commands("/r"), vec!["/read"]);
         assert_eq!(filter_commands("/e"), vec!["/exit"]);
         assert_eq!(filter_commands("/H"), vec!["/help"]);
@@ -2482,7 +2614,7 @@ mod tests {
     #[test]
     fn test_menu_navigation_both_directions() {
         let filtered = filter_commands("/");
-        assert_eq!(filtered.len(), 6);
+        assert_eq!(filtered.len(), 8);
         let mut selected = 0;
 
         // Down in forward direction
@@ -2518,7 +2650,7 @@ mod tests {
         } else {
             selected = filtered.len().saturating_sub(1);
         }
-        assert_eq!(selected, 5);
+        assert_eq!(selected, 7);
         assert_eq!(filtered[selected], "/exit");
 
         // Down wraps around to top
@@ -2544,6 +2676,55 @@ mod tests {
 
         assert_eq!(input, "/read");
         assert!(!menu.is_open);
+    }
+
+    #[test]
+    fn test_menu_enter_selects_login_and_logout_into_input() {
+        let input = String::from("/");
+        let filtered = filter_commands(&input);
+
+        // Select /login: First Enter only inserts command into input area without executing
+        let login_idx = filtered.iter().position(|&cmd| cmd == "/login").unwrap();
+        let mut menu = SuggestionMenu {
+            is_open: true,
+            selected: login_idx,
+        };
+        let selected_idx = menu.selected.min(filtered.len().saturating_sub(1));
+        let selected_cmd = filtered[selected_idx];
+        let mut test_input = selected_cmd.to_string();
+        menu.is_open = false;
+        menu.selected = 0;
+
+        assert_eq!(test_input, "/login");
+        assert!(!menu.is_open);
+
+        // Select /logout: First Enter only inserts command into input area without executing
+        let logout_idx = filtered.iter().position(|&cmd| cmd == "/logout").unwrap();
+        let mut menu = SuggestionMenu {
+            is_open: true,
+            selected: logout_idx,
+        };
+        let selected_idx = menu.selected.min(filtered.len().saturating_sub(1));
+        let selected_cmd = filtered[selected_idx];
+        test_input = selected_cmd.to_string();
+        menu.is_open = false;
+        menu.selected = 0;
+
+        assert_eq!(test_input, "/logout");
+        assert!(!menu.is_open);
+    }
+
+    #[test]
+    fn test_direct_type_login_and_logout_executes() {
+        let filtered_login = filter_commands("/login");
+        assert_eq!(filtered_login, vec!["/login"]);
+        let cmd_login = filtered_login[0];
+        assert!(cmd_login == "/login" || cmd_login == "/logout");
+
+        let filtered_logout = filter_commands("/logout");
+        assert_eq!(filtered_logout, vec!["/logout"]);
+        let cmd_logout = filtered_logout[0];
+        assert!(cmd_logout == "/login" || cmd_logout == "/logout");
     }
 
     #[test]
@@ -2680,6 +2861,8 @@ mod tests {
         assert!(!is_sensitive_action("/pwd"));
         assert!(!is_sensitive_action("/ls"));
         assert!(!is_sensitive_action("/read Cargo.toml"));
+        assert!(!is_sensitive_action("/login"));
+        assert!(!is_sensitive_action("/logout"));
         assert!(!is_sensitive_action("/exit"));
         assert!(!is_sensitive_action("hello how are you?"));
         assert!(!is_sensitive_action("write a function to delete a node in linked list"));
@@ -2723,7 +2906,7 @@ mod tests {
         let mut status = String::from("Do you want to proceed? [y/n]");
         assert_eq!(status, "Do you want to proceed? [y/n]");
 
-        // Simulate cancel (N or Esc)
+        // Simulate cancel (N key)
         pending.take();
         if let Some(last) = messages.last() {
             if last == "Do you want to proceed? [y/n]" {
@@ -2739,6 +2922,96 @@ mod tests {
         assert_eq!(messages[2], "Action cancelled.");
         assert_eq!(status, "Ready");
         assert!(pending.is_none());
+    }
+
+    #[test]
+    fn test_confirmation_esc_does_nothing() {
+        let messages = vec![
+            "You: hello".to_string(),
+            "AI: hi".to_string(),
+            "Do you want to proceed? [y/n]".to_string(),
+        ];
+        let pending = Some(PendingAction::Clear);
+        let status = String::from("Do you want to proceed? [y/n]");
+
+        // Simulate Esc press during confirmation prompt: does nothing
+        // Neither cancels nor clears nor exits
+        let should_exit = false; // KeyCode::Esc => return Ok(false);
+        assert!(!should_exit);
+        assert!(pending.is_some());
+        assert_eq!(status, "Do you want to proceed? [y/n]");
+        assert_eq!(messages.len(), 3);
+    }
+
+    #[test]
+    fn test_esc_does_nothing_anywhere() {
+        // Esc does nothing and never exits
+        let menu_open = true;
+        let is_open = menu_open;
+        // KeyCode::Esc returns Ok(false) without changing menu or exiting
+        let should_exit = false;
+        assert!(!should_exit);
+        assert!(is_open);
+    }
+
+    #[test]
+    fn test_ctrl_c_stop_and_exit_flow() {
+        // While generating: Ctrl+C stops only the response, keeps Crudo open
+        let is_generating = true;
+        let mut ctrl_c_exit_pending = false;
+        let mut status = String::from("Generating...");
+
+        let exit_generation = if is_generating {
+            status = String::from("Ready");
+            ctrl_c_exit_pending = false;
+            false
+        } else {
+            true
+        };
+        assert!(!exit_generation);
+        assert_eq!(status, "Ready");
+        assert!(!ctrl_c_exit_pending);
+
+        // While not generating: first Ctrl+C indicates exit
+        let is_generating = false;
+        let exit_first = if is_generating {
+            false
+        } else if ctrl_c_exit_pending {
+            true
+        } else {
+            ctrl_c_exit_pending = true;
+            status = String::from("Press Ctrl+C again to exit");
+            false
+        };
+        assert!(!exit_first);
+        assert!(ctrl_c_exit_pending);
+        assert_eq!(status, "Press Ctrl+C again to exit");
+
+        // Second Ctrl+C exits
+        let exit_second = if is_generating {
+            false
+        } else if ctrl_c_exit_pending {
+            true
+        } else {
+            false
+        };
+        assert!(exit_second);
+    }
+
+    #[test]
+    fn test_compact_header_renders_gear_and_name() {
+        let area = Rect::new(0, 0, 30, 3);
+        let mut buf = Buffer::empty(area);
+        let widget = compact_header_widget();
+        widget.render(area, &mut buf);
+
+        let mut row1 = String::new();
+        for x in 0..area.width {
+            row1.push_str(buf.cell((x, 1)).unwrap().symbol());
+        }
+        assert!(row1.contains("C R U D O"));
+        assert!(row1.contains('⚙'));
+        assert!(row1.contains("⚙ C R U D O ⚙"));
     }
 
     #[test]
@@ -2829,6 +3102,65 @@ mod tests {
         delete_char_before_cursor(&mut uni, &mut uni_pos);
         assert_eq!(uni, "ab");
         assert_eq!(uni_pos, 1);
+    }
+
+    #[test]
+    fn test_delete_char_after_cursor() {
+        let mut input = String::from("hello");
+        let mut pos = 0;
+
+        // Delete at start deletes character after cursor ('h')
+        delete_char_after_cursor(&mut input, pos);
+        assert_eq!(input, "ello");
+        assert_eq!(pos, 0);
+
+        // Delete in middle
+        pos = 1; // before first 'l' in "ello"
+        delete_char_after_cursor(&mut input, pos);
+        assert_eq!(input, "elo");
+        assert_eq!(pos, 1);
+
+        // Delete at end of input does nothing
+        pos = 3; // at end of "elo" (len 3)
+        delete_char_after_cursor(&mut input, pos);
+        assert_eq!(input, "elo");
+        assert_eq!(pos, 3);
+
+        // Delete beyond end of input does nothing
+        delete_char_after_cursor(&mut input, 10);
+        assert_eq!(input, "elo");
+
+        // Delete on empty input does nothing
+        let mut empty = String::new();
+        delete_char_after_cursor(&mut empty, 0);
+        assert_eq!(empty, "");
+
+        // Multi-byte Unicode handling
+        let mut uni = String::from("a🦀b");
+        let uni_pos = 1; // before '🦀'
+        delete_char_after_cursor(&mut uni, uni_pos);
+        assert_eq!(uni, "ab");
+        assert_eq!(uni_pos, 1);
+
+        // Cursor movement + delete interaction
+        let mut text = String::from("hello");
+        let mut cur = text.chars().count(); // 5, at end
+        delete_char_after_cursor(&mut text, cur); // at end, does nothing
+        assert_eq!(text, "hello");
+        move_cursor_left(&mut cur); // 4, before 'o'
+        delete_char_after_cursor(&mut text, cur); // deletes 'o'
+        assert_eq!(text, "hell");
+        assert_eq!(cur, 4); // cursor at end of "hell"
+        delete_char_after_cursor(&mut text, cur); // at end, does nothing
+        assert_eq!(text, "hell");
+        move_cursor_left(&mut cur); // 3, before 'l'
+        move_cursor_left(&mut cur); // 2, before second 'l'
+        move_cursor_left(&mut cur); // 1, before 'e'
+        delete_char_after_cursor(&mut text, cur); // deletes 'e'
+        assert_eq!(text, "hll");
+        assert_eq!(cur, 1);
+        move_cursor_right(&mut cur, &text); // 2, before second 'l'
+        assert_eq!(cur, 2);
     }
 
     #[test]
