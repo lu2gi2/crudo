@@ -3173,8 +3173,13 @@ fn format_connected_line(model: &str) -> String {
 fn filter_tool_specs(
     tool_registry: &GlobalToolRegistry,
     allowed_tools: Option<&AllowedToolSet>,
+    research_mode: bool,
 ) -> Vec<ToolDefinition> {
-    tool_registry.definitions(allowed_tools)
+    tool_registry
+        .definitions(allowed_tools)
+        .into_iter()
+        .filter(|tool| research_mode || !matches!(tool.name.as_str(), "WebFetch" | "WebSearch"))
+        .collect()
 }
 
 fn parse_system_prompt_args(
@@ -6558,6 +6563,9 @@ fn run_resume_command(
                 })),
             })
         }
+        SlashCommand::Research { .. } | SlashCommand::ExitResearch => {
+            Err("research mode is not supported for resumed commands".into())
+        }
         SlashCommand::Status => {
             let tracker = UsageTracker::from_session(session);
             let usage = tracker.cumulative_usage();
@@ -7136,6 +7144,7 @@ struct LiveCli {
     model: String,
     allowed_tools: Option<AllowedToolSet>,
     permission_mode: PermissionMode,
+    research_mode: bool,
     system_prompt: Vec<String>,
     runtime: BuiltRuntime,
     session: SessionHandle,
@@ -7264,6 +7273,12 @@ struct ListMcpResourcesRequest {
 struct ReadMcpResourceRequest {
     server: String,
     uri: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LocalRagRequest {
+    query: String,
+    top_k: Option<u32>,
 }
 
 impl RuntimeMcpState {
@@ -7480,6 +7495,23 @@ fn build_runtime_mcp_state(
     Ok((Some(Arc::new(Mutex::new(mcp_state))), runtime_tools))
 }
 
+fn local_rag_tool_definition() -> RuntimeToolDefinition {
+    RuntimeToolDefinition {
+        name: "retrieve_context".to_string(),
+        description: Some("Search the local SQLite RAG index and return cited workspace snippets.".to_string()),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string", "minLength": 1 },
+                "top_k": { "type": "integer", "minimum": 1, "maximum": 64 }
+            },
+            "required": ["query"],
+            "additionalProperties": false
+        }),
+        required_permission: PermissionMode::ReadOnly,
+    }
+}
+
 fn mcp_runtime_tool_definition(tool: &runtime::ManagedMcpTool) -> RuntimeToolDefinition {
     RuntimeToolDefinition {
         name: tool.qualified_name.clone(),
@@ -7644,12 +7676,14 @@ impl LiveCli {
             true,
             allowed_tools.clone(),
             permission_mode,
+            false,
             None,
         )?;
         let cli = Self {
             model,
             allowed_tools,
             permission_mode,
+            research_mode: false,
             system_prompt,
             runtime,
             session,
@@ -7734,6 +7768,7 @@ impl LiveCli {
             emit_output,
             self.allowed_tools.clone(),
             self.permission_mode,
+            self.research_mode,
             None,
         )?
         .with_hook_abort_signal(hook_abort_signal.clone());
@@ -8074,6 +8109,21 @@ impl LiveCli {
                 self.print_status();
                 false
             }
+            SlashCommand::Research { query } => {
+                self.set_research_mode(true)?;
+                if let Some(query) = query {
+                    let result = self.run_turn(&format!(
+                        "Research only this public request; do not include workspace context: {query}"
+                    ));
+                    self.set_research_mode(false)?;
+                    result?;
+                }
+                false
+            }
+            SlashCommand::ExitResearch => {
+                self.set_research_mode(false)?;
+                false
+            }
             SlashCommand::Bughunter { scope } => {
                 self.run_bughunter(scope.as_deref())?;
                 false
@@ -8381,6 +8431,7 @@ impl LiveCli {
             true,
             self.allowed_tools.clone(),
             self.permission_mode,
+            self.research_mode,
             None,
         )?;
         self.replace_runtime(runtime)?;
@@ -8389,6 +8440,41 @@ impl LiveCli {
             "{}",
             format_model_switch_report(&previous, &model, message_count)
         );
+        Ok(true)
+    }
+
+    fn set_research_mode(&mut self, enabled: bool) -> Result<bool, Box<dyn std::error::Error>> {
+        if self.research_mode == enabled {
+            println!(
+                "{}",
+                if enabled {
+                    "🌐 RESEARCH MODE already enabled"
+                } else {
+                    "🔒 SOVEREIGN MODE already active"
+                }
+            );
+            return Ok(false);
+        }
+        let session = self.runtime.session().clone();
+        let runtime = build_runtime(
+            session,
+            &self.session.id,
+            self.model.clone(),
+            self.system_prompt.clone(),
+            true,
+            true,
+            self.allowed_tools.clone(),
+            self.permission_mode,
+            enabled,
+            None,
+        )?;
+        self.replace_runtime(runtime)?;
+        self.research_mode = enabled;
+        if enabled {
+            println!("🌐 RESEARCH MODE ENABLED\nExternal web research is temporarily enabled. Workspace context is not automatically sent to external services.");
+        } else {
+            println!("🔒 Returned to SOVEREIGN MODE\nExternal research capabilities disabled.");
+        }
         Ok(true)
     }
 
@@ -8427,6 +8513,7 @@ impl LiveCli {
             true,
             self.allowed_tools.clone(),
             self.permission_mode,
+            self.research_mode,
             None,
         )?;
         self.replace_runtime(runtime)?;
@@ -8457,6 +8544,7 @@ impl LiveCli {
             true,
             self.allowed_tools.clone(),
             self.permission_mode,
+            self.research_mode,
             None,
         )?;
         self.replace_runtime(runtime)?;
@@ -8499,6 +8587,7 @@ impl LiveCli {
             true,
             self.allowed_tools.clone(),
             self.permission_mode,
+            self.research_mode,
             None,
         )?;
         self.replace_runtime(runtime)?;
@@ -8852,6 +8941,7 @@ impl LiveCli {
                     true,
                     self.allowed_tools.clone(),
                     self.permission_mode,
+                    self.research_mode,
                     None,
                 )?;
                 self.replace_runtime(runtime)?;
@@ -8887,6 +8977,7 @@ impl LiveCli {
                     true,
                     self.allowed_tools.clone(),
                     self.permission_mode,
+                    self.research_mode,
                     None,
                 )?;
                 self.replace_runtime(runtime)?;
@@ -8981,6 +9072,7 @@ impl LiveCli {
             true,
             self.allowed_tools.clone(),
             self.permission_mode,
+            self.research_mode,
             None,
         )?;
         self.replace_runtime(runtime)?;
@@ -9001,6 +9093,7 @@ impl LiveCli {
             true,
             self.allowed_tools.clone(),
             self.permission_mode,
+            self.research_mode,
             None,
         )?;
         self.replace_runtime(runtime)?;
@@ -9025,6 +9118,7 @@ impl LiveCli {
             false,
             self.allowed_tools.clone(),
             self.permission_mode,
+            self.research_mode,
             progress,
         )?;
         let mut permission_prompter = CliPermissionPrompter::new(self.permission_mode);
@@ -11980,7 +12074,12 @@ fn build_runtime_plugin_state_with_loader(
         .with_hooks(runtime_config.hooks().merged(&plugin_hook_config));
     let (mcp_state, runtime_tools) = build_runtime_mcp_state(runtime_config)?;
     let tool_registry = GlobalToolRegistry::with_plugin_tools(plugin_registry.aggregated_tools()?)?
-        .with_runtime_tools(runtime_tools)?;
+        .with_runtime_tools(
+            runtime_tools
+                .into_iter()
+                .chain(vec![local_rag_tool_definition()])
+                .collect(),
+        )?;
     Ok(RuntimePluginState {
         feature_config,
         tool_registry,
@@ -12372,6 +12471,7 @@ fn build_runtime(
     emit_output: bool,
     allowed_tools: Option<AllowedToolSet>,
     permission_mode: PermissionMode,
+    research_mode: bool,
     progress_reporter: Option<InternalPromptProgressReporter>,
 ) -> Result<BuiltRuntime, Box<dyn std::error::Error>> {
     let runtime_plugin_state = build_runtime_plugin_state()?;
@@ -12384,6 +12484,7 @@ fn build_runtime(
         emit_output,
         allowed_tools,
         permission_mode,
+        research_mode,
         progress_reporter,
         runtime_plugin_state,
     )
@@ -12400,6 +12501,7 @@ fn build_runtime_with_plugin_state(
     emit_output: bool,
     allowed_tools: Option<AllowedToolSet>,
     permission_mode: PermissionMode,
+    research_mode: bool,
     progress_reporter: Option<InternalPromptProgressReporter>,
     runtime_plugin_state: RuntimePluginState,
 ) -> Result<BuiltRuntime, Box<dyn std::error::Error>> {
@@ -12414,8 +12516,13 @@ fn build_runtime_with_plugin_state(
         mcp_state,
     } = runtime_plugin_state;
     plugin_registry.initialize()?;
-    let policy = permission_policy(permission_mode, &feature_config, &tool_registry)
-        .map_err(std::io::Error::other)?;
+    let policy = permission_policy(
+        permission_mode,
+        &feature_config,
+        &tool_registry,
+        research_mode,
+    )
+    .map_err(std::io::Error::other)?;
     let mut runtime = ConversationRuntime::new_with_features(
         session,
         AnthropicRuntimeClient::new(
@@ -12426,12 +12533,14 @@ fn build_runtime_with_plugin_state(
             allowed_tools.clone(),
             tool_registry.clone(),
             progress_reporter,
+            research_mode,
         )?,
         CliToolExecutor::new(
             allowed_tools.clone(),
             emit_output,
             tool_registry.clone(),
             mcp_state.clone(),
+            research_mode,
         ),
         policy,
         system_prompt,
@@ -12540,6 +12649,7 @@ struct AnthropicRuntimeClient {
     emit_output: bool,
     allowed_tools: Option<AllowedToolSet>,
     tool_registry: GlobalToolRegistry,
+    research_mode: bool,
     progress_reporter: Option<InternalPromptProgressReporter>,
     reasoning_effort: Option<String>,
 }
@@ -12553,6 +12663,7 @@ impl AnthropicRuntimeClient {
         allowed_tools: Option<AllowedToolSet>,
         tool_registry: GlobalToolRegistry,
         progress_reporter: Option<InternalPromptProgressReporter>,
+        research_mode: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Dispatch to the correct provider at construction time.
         // `ApiProviderClient` (exposed by the api crate as
@@ -12605,6 +12716,7 @@ impl AnthropicRuntimeClient {
             emit_output,
             allowed_tools,
             tool_registry,
+            research_mode,
             progress_reporter,
             reasoning_effort: None,
         })
@@ -12636,9 +12748,13 @@ impl ApiClient for AnthropicRuntimeClient {
             max_tokens: max_tokens_for_model(&self.model),
             messages: convert_messages(&request.messages),
             system: (!request.system_prompt.is_empty()).then(|| request.system_prompt.join("\n\n")),
-            tools: self
-                .enable_tools
-                .then(|| filter_tool_specs(&self.tool_registry, self.allowed_tools.as_ref())),
+            tools: self.enable_tools.then(|| {
+                filter_tool_specs(
+                    &self.tool_registry,
+                    self.allowed_tools.as_ref(),
+                    self.research_mode,
+                )
+            }),
             tool_choice: self.enable_tools.then_some(ToolChoice::Auto),
             stream: true,
             reasoning_effort: self.reasoning_effort.clone(),
@@ -13887,6 +14003,7 @@ struct CliToolExecutor {
     allowed_tools: Option<AllowedToolSet>,
     tool_registry: GlobalToolRegistry,
     mcp_state: Option<Arc<Mutex<RuntimeMcpState>>>,
+    research_mode: bool,
 }
 
 impl CliToolExecutor {
@@ -13895,6 +14012,7 @@ impl CliToolExecutor {
         emit_output: bool,
         tool_registry: GlobalToolRegistry,
         mcp_state: Option<Arc<Mutex<RuntimeMcpState>>>,
+        research_mode: bool,
     ) -> Self {
         Self {
             renderer: TerminalRenderer::new(),
@@ -13902,6 +14020,7 @@ impl CliToolExecutor {
             allowed_tools,
             tool_registry,
             mcp_state,
+            research_mode,
         }
     }
 
@@ -13929,6 +14048,9 @@ impl CliToolExecutor {
         tool_name: &str,
         value: serde_json::Value,
     ) -> Result<String, ToolError> {
+        if tool_name == "retrieve_context" {
+            return execute_local_rag(value);
+        }
         let Some(mcp_state) = &self.mcp_state else {
             return Err(ToolError::new(format!(
                 "runtime tool `{tool_name}` is unavailable without configured MCP servers"
@@ -13966,8 +14088,80 @@ impl CliToolExecutor {
     }
 }
 
+fn is_loopback_endpoint(endpoint: &str) -> bool {
+    endpoint.starts_with("http://127.0.0.1:")
+        || endpoint.starts_with("http://localhost:")
+        || endpoint.starts_with("http://[::1]:")
+        || endpoint.starts_with("https://127.0.0.1:")
+        || endpoint.starts_with("https://localhost:")
+        || endpoint.starts_with("https://[::1]:")
+}
+
+fn execute_local_rag(value: serde_json::Value) -> Result<String, ToolError> {
+    let request: LocalRagRequest = serde_json::from_value(value)
+        .map_err(|error| ToolError::new(format!("invalid retrieve_context input: {error}")))?;
+    let query = request.query.trim();
+    if query.is_empty() {
+        return Err(ToolError::new("retrieve_context query must not be empty"));
+    }
+    let db_path = env::var("CRUDO_RAG_DB")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| env::current_dir().unwrap_or_default().join(".crudo-rag/index.sqlite"));
+    let config = if let Some(config) = crudo_rag_service::EmbedConfig::mock_from_env() {
+        config
+    } else {
+        let config = crudo_rag_service::EmbedConfig::from_env().map_err(ToolError::new)?;
+        if !is_loopback_endpoint(&config.base_url) {
+            return Err(ToolError::new(
+                "Sovereign local RAG requires a loopback embedding endpoint or CRUDO_RAG_MOCK_PROVIDERS=1",
+            ));
+        }
+        config
+    };
+    let request = crudo_rag_service::QueryRequest {
+        query: query.to_string(),
+        top_k: request.top_k.unwrap_or(8).clamp(1, 64),
+    };
+    let client = reqwest::Client::new();
+    let runtime = tokio::runtime::Runtime::new()
+        .map_err(|error| ToolError::new(format!("local RAG runtime unavailable: {error}")))?;
+    let response = runtime
+        .block_on(crudo_rag_service::query_index(&db_path, &client, &config, &request))
+        .map_err(ToolError::new)?;
+    serde_json::to_string_pretty(&response).map_err(|error| ToolError::new(error.to_string()))
+}
+
+fn research_capability_requested(tool_name: &str, input: &str) -> bool {
+    if matches!(tool_name, "WebFetch" | "WebSearch") {
+        return true;
+    }
+    if tool_name != "MCPTool" {
+        return false;
+    }
+    serde_json::from_str::<serde_json::Value>(input)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("qualifiedName")
+                .and_then(serde_json::Value::as_str)
+                .or_else(|| value.get("tool").and_then(serde_json::Value::as_str))
+                .map(str::to_owned)
+        })
+        .is_some_and(|name| {
+            matches!(
+                name.as_str(),
+                "WebFetch" | "WebSearch" | "functions.WebFetch" | "functions.WebSearch"
+            )
+        })
+}
+
 impl ToolExecutor for CliToolExecutor {
     fn execute(&mut self, tool_name: &str, input: &str) -> Result<String, ToolError> {
+        if !self.research_mode && research_capability_requested(tool_name, input) {
+            return Err(ToolError::new(format!(
+                "tool `{tool_name}` is disabled outside /research mode"
+            )));
+        }
         if self
             .allowed_tools
             .as_ref()
@@ -14015,10 +14209,19 @@ fn permission_policy(
     mode: PermissionMode,
     feature_config: &runtime::RuntimeFeatureConfig,
     tool_registry: &GlobalToolRegistry,
+    research_mode: bool,
 ) -> Result<PermissionPolicy, String> {
     Ok(tool_registry.permission_specs(None)?.into_iter().fold(
-        PermissionPolicy::new(mode).with_permission_rules(feature_config.permission_rules()),
+        PermissionPolicy::new(mode)
+            .with_web_research_allowed(research_mode)
+            .with_permission_rules(feature_config.permission_rules()),
         |policy, (name, required_permission)| {
+            let required_permission =
+                if research_mode && matches!(name.as_str(), "WebFetch" | "WebSearch") {
+                    PermissionMode::ReadOnly
+                } else {
+                    required_permission
+                };
             policy.with_tool_requirement(name, required_permission)
         },
     ))
@@ -14144,7 +14347,10 @@ fn print_help_to(out: &mut impl Write) -> io::Result<()> {
     writeln!(out, "  crudo agents")?;
     writeln!(out, "  crudo mcp")?;
     writeln!(out, "  crudo skills")?;
-    writeln!(out, "  crudo system-prompt [--cwd PATH] [--date YYYY-MM-DD]")?;
+    writeln!(
+        out,
+        "  crudo system-prompt [--cwd PATH] [--date YYYY-MM-DD]"
+    )?;
     writeln!(out, "  crudo init")?;
     writeln!(
         out,
@@ -17238,7 +17444,7 @@ mod tests {
             .into_iter()
             .map(str::to_string)
             .collect();
-        let filtered = filter_tool_specs(&GlobalToolRegistry::builtin(), Some(&allowed));
+        let filtered = filter_tool_specs(&GlobalToolRegistry::builtin(), Some(&allowed), false);
         let names = filtered
             .into_iter()
             .map(|spec| spec.name)
@@ -17248,7 +17454,7 @@ mod tests {
 
     #[test]
     fn filtered_tool_specs_include_plugin_tools() {
-        let filtered = filter_tool_specs(&registry_with_plugin_tool(), None);
+        let filtered = filter_tool_specs(&registry_with_plugin_tool(), None, false);
         let names = filtered
             .into_iter()
             .map(|definition| definition.name)
@@ -17264,6 +17470,7 @@ mod tests {
             PermissionMode::ReadOnly,
             &feature_config,
             &registry_with_plugin_tool(),
+            false,
         )
         .expect("permission policy should build");
         let required = policy.required_mode_for("plugin_echo");
@@ -18929,7 +19136,11 @@ UU conflicted.rs",
         })
         .to_string();
 
-        let rendered = format_tool_result("mcp__industrial_demo__generate_presentation", &output, false);
+        let rendered = format_tool_result(
+            "mcp__industrial_demo__generate_presentation",
+            &output,
+            false,
+        );
 
         assert!(rendered.contains("Presentation generated: demo/output/report.pptx (7 slides)"));
         assert!(!rendered.contains("structuredContent"));
@@ -19263,6 +19474,7 @@ UU conflicted.rs",
             false,
             state.tool_registry.clone(),
             state.mcp_state.clone(),
+            false,
         );
 
         let tool_output = executor
@@ -19361,6 +19573,7 @@ UU conflicted.rs",
             false,
             state.tool_registry.clone(),
             state.mcp_state.clone(),
+            false,
         );
 
         let search_output = executor
@@ -19421,6 +19634,7 @@ UU conflicted.rs",
             false,
             None,
             PermissionMode::DangerFullAccess,
+            false,
             None,
             runtime_plugin_state,
         )

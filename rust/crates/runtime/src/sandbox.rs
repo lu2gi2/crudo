@@ -65,6 +65,7 @@ pub struct SandboxStatus {
     pub in_container: bool,
     pub container_markers: Vec<String>,
     pub fallback_reason: Option<String>,
+    pub execution_allowed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -203,6 +204,7 @@ pub fn resolve_sandbox_status_for_request(request: &SandboxRequest, cwd: &Path) 
         allowed_mounts,
         in_container: container.in_container,
         container_markers: container.markers,
+        execution_allowed: !request.enabled || active,
         fallback_reason: (!fallback_reasons.is_empty()).then(|| fallback_reasons.join("; ")),
     }
 }

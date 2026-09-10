@@ -106,6 +106,7 @@ pub struct PermissionPolicy {
     /// denied regardless of permission mode, checked before the rule-based
     /// deny/allow/ask evaluation.
     denied_tools: Vec<String>,
+    web_research_allowed: bool,
 }
 
 impl PermissionPolicy {
@@ -118,7 +119,14 @@ impl PermissionPolicy {
             deny_rules: Vec::new(),
             ask_rules: Vec::new(),
             denied_tools: Vec::new(),
+            web_research_allowed: false,
         }
+    }
+
+    #[must_use]
+    pub fn with_web_research_allowed(mut self, allowed: bool) -> Self {
+        self.web_research_allowed = allowed;
+        self
     }
 
     #[must_use]
@@ -190,6 +198,12 @@ impl PermissionPolicy {
         context: &PermissionContext,
         prompter: Option<&mut dyn PermissionPrompter>,
     ) -> PermissionOutcome {
+        if is_web_research_tool(tool_name, input) && !self.web_research_allowed {
+            return PermissionOutcome::Deny {
+                reason: "web research is disabled outside /research mode".to_string(),
+            };
+        }
+
         // #159: check denied_tools before rule-based evaluation. Tools listed
         // in the denied_tools config are unconditionally denied regardless of
         // permission mode.
@@ -412,6 +426,30 @@ impl PermissionRule {
     }
 }
 
+fn is_web_research_tool(tool_name: &str, input: &str) -> bool {
+    if matches!(tool_name, "WebFetch" | "WebSearch") {
+        return true;
+    }
+    if tool_name != "MCPTool" {
+        return false;
+    }
+    serde_json::from_str::<serde_json::Value>(input)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("qualifiedName")
+                .and_then(serde_json::Value::as_str)
+                .or_else(|| value.get("tool").and_then(serde_json::Value::as_str))
+                .map(str::to_owned)
+        })
+        .is_some_and(|name| {
+            matches!(
+                name.as_str(),
+                "WebFetch" | "WebSearch" | "functions.WebFetch" | "functions.WebSearch"
+            )
+        })
+}
+
 fn parse_rule_matcher(content: &str) -> PermissionRuleMatcher {
     let unescaped = unescape_rule_content(content.trim());
     if unescaped.is_empty() || unescaped == "*" {
@@ -607,6 +645,47 @@ mod tests {
             policy.authorize("bash", r#"{"command":"rm -rf /tmp/x"}"#, None),
             PermissionOutcome::Deny { reason } if reason.contains("denied by rule")
         ));
+    }
+
+    #[test]
+    fn web_research_is_denied_before_prompt_by_default() {
+        let policy = PermissionPolicy::new(PermissionMode::WorkspaceWrite)
+            .with_tool_requirement("MCPTool", PermissionMode::DangerFullAccess);
+        let mut prompter = RecordingPrompter {
+            seen: Vec::new(),
+            allow: true,
+        };
+
+        let direct = policy.authorize(
+            "WebSearch",
+            r#"{"query":"latest Rust release"}"#,
+            Some(&mut prompter),
+        );
+        assert!(
+            matches!(direct, PermissionOutcome::Deny { reason } if reason.contains("outside /research"))
+        );
+        assert!(prompter.seen.is_empty());
+
+        let wrapped = policy.authorize(
+            "MCPTool",
+            r#"{"qualifiedName":"WebSearch","arguments":{"query":"latest Rust release"}}"#,
+            Some(&mut prompter),
+        );
+        assert!(
+            matches!(wrapped, PermissionOutcome::Deny { reason } if reason.contains("outside /research"))
+        );
+        assert!(prompter.seen.is_empty());
+    }
+
+    #[test]
+    fn web_research_is_allowed_when_explicitly_enabled() {
+        let policy = PermissionPolicy::new(PermissionMode::WorkspaceWrite)
+            .with_web_research_allowed(true)
+            .with_tool_requirement("WebSearch", PermissionMode::ReadOnly);
+        assert_eq!(
+            policy.authorize("WebSearch", r#"{"query":"Rust"}"#, None),
+            PermissionOutcome::Allow
+        );
     }
 
     #[test]
