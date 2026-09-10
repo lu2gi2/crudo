@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -9603,14 +9605,20 @@ mod tests {
 
     #[test]
     fn bash_tool_reports_success_exit_failure_timeout_and_background() {
-        let success = execute_tool("bash", &json!({ "command": "printf 'hello'" }))
-            .expect("bash should succeed");
+        let success = execute_tool(
+            "bash",
+            &json!({ "command": "printf 'hello'", "filesystemMode": "off", "namespaceRestrictions": false }),
+        )
+        .expect("bash should succeed");
         let success_output: serde_json::Value = serde_json::from_str(&success).expect("json");
         assert_eq!(success_output["stdout"], "hello");
         assert_eq!(success_output["interrupted"], false);
 
-        let failure = execute_tool("bash", &json!({ "command": "printf 'oops' >&2; exit 7" }))
-            .expect("bash failure should still return structured output");
+        let failure = execute_tool(
+            "bash",
+            &json!({ "command": "printf 'oops' >&2; exit 7", "filesystemMode": "off", "namespaceRestrictions": false }),
+        )
+        .expect("bash failure should still return structured output");
         let failure_output: serde_json::Value = serde_json::from_str(&failure).expect("json");
         assert_eq!(failure_output["returnCodeInterpretation"], "exit_code:7");
         assert!(failure_output["stderr"]
@@ -9618,8 +9626,11 @@ mod tests {
             .expect("stderr")
             .contains("oops"));
 
-        let timeout = execute_tool("bash", &json!({ "command": "sleep 1", "timeout": 10 }))
-            .expect("bash timeout should return output");
+        let timeout = execute_tool(
+            "bash",
+            &json!({ "command": "sleep 1", "timeout": 10, "filesystemMode": "off", "namespaceRestrictions": false }),
+        )
+        .expect("bash timeout should return output");
         let timeout_output: serde_json::Value = serde_json::from_str(&timeout).expect("json");
         assert_eq!(timeout_output["interrupted"], true);
         assert_eq!(timeout_output["returnCodeInterpretation"], "timeout");
@@ -9630,7 +9641,7 @@ mod tests {
 
         let background = execute_tool(
             "bash",
-            &json!({ "command": "sleep 1", "run_in_background": true }),
+            &json!({ "command": "sleep 1", "run_in_background": true, "filesystemMode": "off", "namespaceRestrictions": false }),
         )
         .expect("bash background should succeed");
         let background_output: serde_json::Value = serde_json::from_str(&background).expect("json");
@@ -9642,7 +9653,7 @@ mod tests {
     fn bash_tool_classifies_test_timeout_as_hung_with_provenance() {
         let timeout = execute_tool(
             "bash",
-            &json!({ "command": "sleep 1 # cargo test slow_case", "timeout": 10 }),
+            &json!({ "command": "sleep 1 # cargo test slow_case", "timeout": 10, "filesystemMode": "off", "namespaceRestrictions": false }),
         )
         .expect("bash timeout should return output");
         let timeout_output: serde_json::Value = serde_json::from_str(&timeout).expect("json");
@@ -9726,7 +9737,7 @@ mod tests {
 
         let output = execute_tool(
             "bash",
-            &json!({ "command": "printf 'targeted ok'; cargo test -p runtime stale_branch" }),
+            &json!({ "command": "printf 'targeted ok'; cargo test -p runtime stale_branch", "filesystemMode": "off", "namespaceRestrictions": false }),
         )
         .expect("targeted commands should still execute");
         let output_json: serde_json::Value = serde_json::from_str(&output).expect("json");
@@ -10154,8 +10165,9 @@ mod tests {
         assert_eq!(enter_output["previousLocalMode"], "acceptEdits");
         assert_eq!(enter_output["currentLocalMode"], "plan");
 
-        let local_settings = std::fs::read_to_string(cwd.join(".crudo").join("settings.local.json"))
-            .expect("local settings after enter");
+        let local_settings =
+            std::fs::read_to_string(cwd.join(".crudo").join("settings.local.json"))
+                .expect("local settings after enter");
         assert!(local_settings.contains(r#""defaultMode": "plan""#));
         let state =
             std::fs::read_to_string(cwd.join(".crudo").join("tool-state").join("plan-mode.json"))
@@ -10170,8 +10182,9 @@ mod tests {
         assert_eq!(exit_output["previousLocalMode"], "acceptEdits");
         assert_eq!(exit_output["currentLocalMode"], "acceptEdits");
 
-        let local_settings = std::fs::read_to_string(cwd.join(".crudo").join("settings.local.json"))
-            .expect("local settings after exit");
+        let local_settings =
+            std::fs::read_to_string(cwd.join(".crudo").join("settings.local.json"))
+                .expect("local settings after exit");
         assert!(local_settings.contains(r#""defaultMode": "acceptEdits""#));
         assert!(!cwd
             .join(".crudo")
@@ -10225,8 +10238,9 @@ mod tests {
         assert_eq!(exit_output["changed"], true);
         assert_eq!(exit_output["currentLocalMode"], serde_json::Value::Null);
 
-        let local_settings = std::fs::read_to_string(cwd.join(".crudo").join("settings.local.json"))
-            .expect("local settings after exit");
+        let local_settings =
+            std::fs::read_to_string(cwd.join(".crudo").join("settings.local.json"))
+                .expect("local settings after exit");
         let local_settings_json: serde_json::Value =
             serde_json::from_str(&local_settings).expect("valid settings json");
         assert_eq!(
@@ -10577,7 +10591,10 @@ printf 'pwsh:%s' "$1"
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let registry = super::GlobalToolRegistry::builtin();
         let result = registry
-            .execute("bash", &json!({ "command": "printf 'ok'" }))
+            .execute(
+                "bash",
+                &json!({ "command": "printf 'ok'", "filesystemMode": "off", "namespaceRestrictions": false }),
+            )
             .expect("bash should succeed without enforcer");
         let output: serde_json::Value = serde_json::from_str(&result).expect("json");
         assert_eq!(output["stdout"], "ok");

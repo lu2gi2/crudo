@@ -1518,10 +1518,7 @@ fn doctor_and_resume_status_emit_json_when_requested() {
         install_source["official_repo"],
         "https://github.com/ultraworkers/crudo"
     );
-    assert_eq!(
-        install_source["deprecated_install"],
-        "cargo install crudo"
-    );
+    assert_eq!(install_source["deprecated_install"], "cargo install crudo");
 
     let workspace = checks
         .iter()
@@ -3373,7 +3370,9 @@ fn config_unsupported_section_json_hint_741() {
             .expect("crudo config should run");
         let stdout = String::from_utf8_lossy(&output.stdout);
         let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|_| {
-            panic!("crudo config {section} --output-format json must emit valid JSON; got: {stdout}")
+            panic!(
+                "crudo config {section} --output-format json must emit valid JSON; got: {stdout}"
+            )
         });
         assert_eq!(
             parsed["kind"], "config",
@@ -3538,8 +3537,11 @@ fn config_parse_error_has_typed_error_kind_and_hint_764() {
     fs::create_dir_all(root.join(".crudo")).expect("temp .crudo dir should exist");
 
     // Write an invalid JSON file (type mismatch: model must be a string)
-    fs::write(root.join(".crudo").join("settings.json"), r#"{"model": 99}"#)
-        .expect("settings.json should write");
+    fs::write(
+        root.join(".crudo").join("settings.json"),
+        r#"{"model": 99}"#,
+    )
+    .expect("settings.json should write");
 
     let output = run_crudo(&root, &["--output-format", "json", "config", "show"], &[]);
     assert!(

@@ -654,10 +654,12 @@ dependencies = [
  "api",
  "commands",
  "crossterm",
+ "crudo-rag-service",
  "log",
  "mock-anthropic-service",
  "plugins",
  "pulldown-cmark",
+ "reqwest",
  "runtime",
  "rustyline",
  "serde",
@@ -2146,6 +2148,7 @@ dependencies = [
  "telemetry",
  "tempfile",
  "tokio",
+ "url",
  "walkdir",
 ]
 

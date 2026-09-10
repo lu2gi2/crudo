@@ -70,8 +70,27 @@ pub struct BashCommandOutput {
 
 /// Executes a shell command with the requested sandbox settings.
 pub fn execute_bash(input: BashCommandInput) -> io::Result<BashCommandOutput> {
+    if input.dangerously_disable_sandbox == Some(true) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "sandbox disablement is rejected by the fail-closed execution policy",
+        ));
+    }
+
     let cwd = env::current_dir()?;
     let sandbox_status = sandbox_status_for_input(&input, &cwd);
+    if !sandbox_status.execution_allowed {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!(
+                "sandbox enforcement unavailable; refusing unsandboxed execution{}",
+                sandbox_status
+                    .fallback_reason
+                    .as_deref()
+                    .map_or_else(String::new, |reason| format!(": {reason}"))
+            ),
+        ));
+    }
 
     if input.run_in_background.unwrap_or(false) {
         let mut child = prepare_command(&input.command, &cwd, &sandbox_status, false);
@@ -371,7 +390,7 @@ mod tests {
             dangerously_disable_sandbox: Some(false),
             namespace_restrictions: Some(false),
             isolate_network: Some(false),
-            filesystem_mode: Some(FilesystemIsolationMode::WorkspaceOnly),
+            filesystem_mode: Some(FilesystemIsolationMode::Off),
             allowed_mounts: None,
         })
         .expect("bash command should execute");
@@ -382,8 +401,8 @@ mod tests {
     }
 
     #[test]
-    fn disables_sandbox_when_requested() {
-        let output = execute_bash(BashCommandInput {
+    fn rejects_sandbox_disablement() {
+        let error = execute_bash(BashCommandInput {
             command: String::from("printf 'hello'"),
             timeout: Some(1_000),
             description: None,
@@ -394,9 +413,10 @@ mod tests {
             filesystem_mode: None,
             allowed_mounts: None,
         })
-        .expect("bash command should execute");
+        .expect_err("sandbox disablement should be rejected");
 
-        assert!(!output.sandbox_status.expect("sandbox status").enabled);
+        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+        assert!(error.to_string().contains("sandbox disablement"));
     }
 
     #[test]
@@ -409,7 +429,7 @@ mod tests {
             dangerously_disable_sandbox: Some(false),
             namespace_restrictions: Some(false),
             isolate_network: Some(false),
-            filesystem_mode: Some(FilesystemIsolationMode::WorkspaceOnly),
+            filesystem_mode: Some(FilesystemIsolationMode::Off),
             allowed_mounts: None,
         })
         .expect("bash command should return structured timeout");
@@ -431,10 +451,10 @@ mod tests {
             timeout: Some(2_000),
             description: None,
             run_in_background: Some(false),
-            dangerously_disable_sandbox: Some(true),
-            namespace_restrictions: None,
-            isolate_network: None,
-            filesystem_mode: None,
+            dangerously_disable_sandbox: Some(false),
+            namespace_restrictions: Some(false),
+            isolate_network: Some(false),
+            filesystem_mode: Some(FilesystemIsolationMode::Off),
             allowed_mounts: None,
         })
         .expect("bash command should execute cleanly");

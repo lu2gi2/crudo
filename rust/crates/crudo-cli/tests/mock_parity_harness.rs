@@ -277,6 +277,10 @@ impl HarnessWorkspace {
         fs::create_dir_all(&self.root)?;
         fs::create_dir_all(&self.config_home)?;
         fs::create_dir_all(&self.home)?;
+        fs::write(
+            self.config_home.join("settings.json"),
+            r#"{"sandbox":{"enabled":false}}"#,
+        )?;
         Ok(())
     }
 }

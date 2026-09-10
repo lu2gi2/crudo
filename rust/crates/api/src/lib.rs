@@ -1,3 +1,7 @@
+// ApiError intentionally carries rich provider diagnostics; changing every public Result to
+// box it would be a broad API change. Keep this crate's established error shape for now.
+#![allow(clippy::result_large_err)]
+
 mod client;
 mod error;
 mod http_client;

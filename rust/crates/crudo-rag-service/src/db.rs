@@ -166,8 +166,8 @@ pub fn blob_to_f32_vec(blob: &[u8], dim: usize) -> Option<Vec<f32>> {
         return None;
     }
     let mut v = Vec::with_capacity(dim);
-    for chunk in blob.chunks_exact(4) {
-        v.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+    for chunk in blob.as_chunks::<4>().0 {
+        v.push(f32::from_le_bytes(*chunk));
     }
     Some(v)
 }

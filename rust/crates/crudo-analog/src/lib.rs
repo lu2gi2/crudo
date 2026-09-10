@@ -1,5 +1,6 @@
 //! Lean agent harness: tool loop, optional streaming, optional `PermissionEnforcer`.
 #![forbid(unsafe_code)]
+#![allow(clippy::result_large_err)]
 
 use std::collections::BTreeMap;
 use std::fmt::Write;
@@ -1084,7 +1085,10 @@ pub fn print_tools_dry_run(
     out: &mut impl io::Write,
 ) -> std::io::Result<()> {
     let tools = tool_definitions(permission_mode, rag_base_url);
-    writeln!(out, "crudo-analog — effective tools (dry-run, no API calls)")?;
+    writeln!(
+        out,
+        "crudo-analog — effective tools (dry-run, no API calls)"
+    )?;
     writeln!(
         out,
         "permission_mode: {}   runtime::PermissionEnforcer: {}",

@@ -73,6 +73,20 @@ const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
         resume_supported: true,
     },
     SlashCommandSpec {
+        name: "research",
+        aliases: &[],
+        summary: "Temporarily enable public web research capabilities",
+        argument_hint: Some("[query]"),
+        resume_supported: false,
+    },
+    SlashCommandSpec {
+        name: "exit-research",
+        aliases: &[],
+        summary: "Disable research capabilities and return to Sovereign Mode",
+        argument_hint: None,
+        resume_supported: false,
+    },
+    SlashCommandSpec {
         name: "sandbox",
         aliases: &[],
         summary: "Show sandbox isolation status",
@@ -1048,6 +1062,10 @@ const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
 pub enum SlashCommand {
     Help,
     Status,
+    Research {
+        query: Option<String>,
+    },
+    ExitResearch,
     Sandbox,
     Compact,
     Bughunter {
@@ -1237,6 +1255,8 @@ impl SlashCommand {
             Self::History { .. } => "/history",
             Self::Diff => "/diff",
             Self::Status => "/status",
+            Self::Research { .. } => "/research",
+            Self::ExitResearch => "/exit-research",
             Self::Stats => "/stats",
             Self::Version => "/version",
             Self::Commit { .. } => "/commit",
@@ -1328,6 +1348,11 @@ pub fn validate_slash_command_input(
         "status" => {
             validate_no_args(command, &args)?;
             SlashCommand::Status
+        }
+        "research" => SlashCommand::Research { query: remainder },
+        "exit-research" => {
+            validate_no_args(command, &args)?;
+            SlashCommand::ExitResearch
         }
         "sandbox" => {
             validate_no_args(command, &args)?;
@@ -5135,9 +5160,9 @@ fn definition_source_id(source: DefinitionSource) -> &'static str {
         DefinitionSource::UserCrudoConfigHome | DefinitionSource::UserCodexHome => {
             "user_crudo_config_home"
         }
-        DefinitionSource::UserCrudo | DefinitionSource::UserCodex | DefinitionSource::UserClaude => {
-            "user_crudo"
-        }
+        DefinitionSource::UserCrudo
+        | DefinitionSource::UserCodex
+        | DefinitionSource::UserClaude => "user_crudo",
     }
 }
 
@@ -5328,6 +5353,8 @@ pub fn handle_slash_command(
             session: session.clone(),
         }),
         SlashCommand::Status
+        | SlashCommand::Research { .. }
+        | SlashCommand::ExitResearch
         | SlashCommand::Bughunter { .. }
         | SlashCommand::Commit
         | SlashCommand::Pr { .. }
@@ -5528,6 +5555,16 @@ mod tests {
         assert_eq!(
             SlashCommand::parse(" /status "),
             Ok(Some(SlashCommand::Status))
+        );
+        assert_eq!(
+            SlashCommand::parse("/research latest public docs"),
+            Ok(Some(SlashCommand::Research {
+                query: Some("latest public docs".to_string())
+            }))
+        );
+        assert_eq!(
+            SlashCommand::parse("/exit-research"),
+            Ok(Some(SlashCommand::ExitResearch))
         );
         assert_eq!(
             SlashCommand::parse("/sandbox"),
@@ -6000,6 +6037,8 @@ mod tests {
         assert!(help.contains("/export [file]"));
         assert!(help.contains("/session"), "help must mention /session");
         assert!(help.contains("/sandbox"));
+        assert!(help.contains("/research [query]"));
+        assert!(help.contains("/exit-research"));
         assert!(help.contains(
             "/plugin [list|install <path>|enable <name>|disable <name>|uninstall <id>|update <id>]"
         ));
@@ -6012,7 +6051,7 @@ mod tests {
         assert!(!help.contains("/login"));
         assert!(!help.contains("/logout"));
         assert!(help.contains("/setup"));
-        assert_eq!(slash_command_specs().len(), 140);
+        assert_eq!(slash_command_specs().len(), 142);
         assert!(resume_supported_slash_commands().len() >= 39);
     }
 
@@ -6615,8 +6654,9 @@ mod tests {
         assert!(agents_help.contains(
             "Format           TOML files (.toml); create scaffolds .crudo/agents/<name>.toml"
         ));
-        assert!(agents_help
-            .contains("Sources          .crudo/agents, ~/.crudo/agents, $CRUDO_CONFIG_HOME/agents"));
+        assert!(agents_help.contains(
+            "Sources          .crudo/agents, ~/.crudo/agents, $CRUDO_CONFIG_HOME/agents"
+        ));
 
         // `show <name>` is now valid. For an agent that doesn't exist it returns Err(NotFound).
         let agents_show_missing =
