@@ -16,7 +16,11 @@ const STARTER_SETTINGS_JSON: &str = concat!(
     "}\n",
 );
 const GITIGNORE_COMMENT: &str = "# Crudo local artifacts";
-const GITIGNORE_ENTRIES: [&str; 3] = [".crudo/settings.local.json", ".crudo/sessions/", ".crudohip/"];
+const GITIGNORE_ENTRIES: [&str; 3] = [
+    ".crudo/settings.local.json",
+    ".crudo/sessions/",
+    ".crudohip/",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum InitStatus {
@@ -484,7 +488,8 @@ mod tests {
         let root = temp_dir();
         fs::create_dir_all(&root).expect("create root");
         fs::write(root.join("CLAUDE.md"), "custom guidance\n").expect("write existing claude md");
-        fs::write(root.join(".gitignore"), ".crudo/settings.local.json\n").expect("write gitignore");
+        fs::write(root.join(".gitignore"), ".crudo/settings.local.json\n")
+            .expect("write gitignore");
         fs::create_dir_all(root.join(".crudo")).expect("create existing .crudo dir");
 
         let first = initialize_repo(&root).expect("first init should succeed");

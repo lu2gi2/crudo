@@ -54,14 +54,15 @@ use init::initialize_repo;
 use plugins::{PluginHooks, PluginManager, PluginManagerConfig, PluginRegistry};
 use render::{MarkdownStreamState, Spinner, TerminalRenderer};
 use runtime::{
-    check_base_commit, format_stale_base_warning, format_usd, load_oauth_credentials,
-    load_system_prompt, load_system_prompt_with_context, pricing_for_model, resolve_expected_base,
-    resolve_sandbox_status, ApiClient, ApiRequest, AssistantEvent, BaseCommitState,
-    CompactionConfig, ConfigFileReport, ConfigLoader, ConfigSource, ContentBlock, ContextFile,
-    ConversationMessage, ConversationRuntime, McpConfigCollection, McpInvalidServerConfig,
-    McpServer, McpServerManager, McpServerSpec, McpTool, MessageRole, ModelPricing, PermissionMode,
-    PermissionPolicy, ProjectContext, PromptCacheEvent, ResolvedPermissionMode, RuntimeError,
-    RuntimeInvalidHookConfig, Session, TokenUsage, ToolError, ToolExecutor, UsageTracker,
+    check_base_commit, format_stale_base_warning, format_usd, is_loopback_url,
+    load_oauth_credentials, load_system_prompt, load_system_prompt_with_context, pricing_for_model,
+    resolve_expected_base, resolve_sandbox_status, ApiClient, ApiRequest, AssistantEvent,
+    BaseCommitState, CapabilityPolicy, CompactionConfig, ConfigFileReport, ConfigLoader,
+    ConfigSource, ContentBlock, ContextFile, ConversationMessage, ConversationRuntime,
+    McpConfigCollection, McpInvalidServerConfig, McpServer, McpServerManager, McpServerSpec,
+    McpTool, MessageRole, ModelPricing, PermissionMode, PermissionPolicy, ProjectContext,
+    PromptCacheEvent, ResolvedPermissionMode, RuntimeError, RuntimeInvalidHookConfig, Session,
+    TokenUsage, ToolError, ToolExecutor, UsageTracker,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -4099,7 +4100,9 @@ fn check_config_health(
                 .map(|path| format!("Discovered file   {path}"))
                 .collect()
         })
-        .with_hint("Fix the JSON syntax error in the listed config file, then rerun `crudo doctor`.")
+        .with_hint(
+            "Fix the JSON syntax error in the listed config file, then rerun `crudo doctor`.",
+        )
         .with_data(Map::from_iter([
             ("discovered_files".to_string(), json!(discovered_paths)),
             (
@@ -7284,8 +7287,9 @@ struct LocalRagRequest {
 impl RuntimeMcpState {
     fn new(
         runtime_config: &runtime::RuntimeConfig,
+        policy: CapabilityPolicy,
     ) -> Result<Option<(Self, runtime::McpToolDiscoveryReport)>, Box<dyn std::error::Error>> {
-        let mut manager = McpServerManager::from_runtime_config(runtime_config);
+        let mut manager = McpServerManager::from_runtime_config_with_policy(runtime_config, policy);
         if manager.server_names().is_empty() && manager.unsupported_servers().is_empty() {
             return Ok(None);
         }
@@ -7479,7 +7483,9 @@ impl RuntimeMcpState {
 fn build_runtime_mcp_state(
     runtime_config: &runtime::RuntimeConfig,
 ) -> Result<RuntimePluginStateBuildOutput, Box<dyn std::error::Error>> {
-    let Some((mcp_state, discovery)) = RuntimeMcpState::new(runtime_config)? else {
+    let Some((mcp_state, discovery)) =
+        RuntimeMcpState::new(runtime_config, CapabilityPolicy::sovereign())?
+    else {
         return Ok((None, Vec::new()));
     };
 
@@ -7498,7 +7504,9 @@ fn build_runtime_mcp_state(
 fn local_rag_tool_definition() -> RuntimeToolDefinition {
     RuntimeToolDefinition {
         name: "retrieve_context".to_string(),
-        description: Some("Search the local SQLite RAG index and return cited workspace snippets.".to_string()),
+        description: Some(
+            "Search the local SQLite RAG index and return cited workspace snippets.".to_string(),
+        ),
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -8110,13 +8118,46 @@ impl LiveCli {
                 false
             }
             SlashCommand::Research { query } => {
-                self.set_research_mode(true)?;
                 if let Some(query) = query {
-                    let result = self.run_turn(&format!(
+                    let sovereign_session = self.runtime.session().clone();
+                    let mut research_session = sovereign_session.clone();
+                    research_session.messages.clear();
+                    let research_runtime = build_runtime(
+                        research_session,
+                        &self.session.id,
+                        self.model.clone(),
+                        self.system_prompt.clone(),
+                        true,
+                        true,
+                        self.allowed_tools.clone(),
+                        self.permission_mode,
+                        true,
+                        None,
+                    )?;
+                    self.replace_runtime(research_runtime)?;
+                    self.research_mode = true;
+                    let research_result = self.run_turn(&format!(
                         "Research only this public request; do not include workspace context: {query}"
                     ));
-                    self.set_research_mode(false)?;
-                    result?;
+                    let restore_result = (|| {
+                        let sovereign_runtime = build_runtime(
+                            sovereign_session,
+                            &self.session.id,
+                            self.model.clone(),
+                            self.system_prompt.clone(),
+                            true,
+                            true,
+                            self.allowed_tools.clone(),
+                            self.permission_mode,
+                            false,
+                            None,
+                        )?;
+                        self.replace_runtime(sovereign_runtime)?;
+                        self.research_mode = false;
+                        Ok::<(), Box<dyn std::error::Error>>(())
+                    })();
+                    restore_result?;
+                    research_result?;
                 }
                 false
             }
@@ -14089,12 +14130,7 @@ impl CliToolExecutor {
 }
 
 fn is_loopback_endpoint(endpoint: &str) -> bool {
-    endpoint.starts_with("http://127.0.0.1:")
-        || endpoint.starts_with("http://localhost:")
-        || endpoint.starts_with("http://[::1]:")
-        || endpoint.starts_with("https://127.0.0.1:")
-        || endpoint.starts_with("https://localhost:")
-        || endpoint.starts_with("https://[::1]:")
+    is_loopback_url(endpoint)
 }
 
 fn execute_local_rag(value: serde_json::Value) -> Result<String, ToolError> {
@@ -14106,7 +14142,11 @@ fn execute_local_rag(value: serde_json::Value) -> Result<String, ToolError> {
     }
     let db_path = env::var("CRUDO_RAG_DB")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| env::current_dir().unwrap_or_default().join(".crudo-rag/index.sqlite"));
+        .unwrap_or_else(|_| {
+            env::current_dir()
+                .unwrap_or_default()
+                .join(".crudo-rag/index.sqlite")
+        });
     let config = if let Some(config) = crudo_rag_service::EmbedConfig::mock_from_env() {
         config
     } else {
@@ -14126,7 +14166,9 @@ fn execute_local_rag(value: serde_json::Value) -> Result<String, ToolError> {
     let runtime = tokio::runtime::Runtime::new()
         .map_err(|error| ToolError::new(format!("local RAG runtime unavailable: {error}")))?;
     let response = runtime
-        .block_on(crudo_rag_service::query_index(&db_path, &client, &config, &request))
+        .block_on(crudo_rag_service::query_index(
+            &db_path, &client, &config, &request,
+        ))
         .map_err(ToolError::new)?;
     serde_json::to_string_pretty(&response).map_err(|error| ToolError::new(error.to_string()))
 }

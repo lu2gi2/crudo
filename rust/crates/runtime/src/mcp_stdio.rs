@@ -11,6 +11,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::time::timeout;
 
+use crate::capabilities::CapabilityPolicy;
 use crate::config::{McpTransport, RuntimeConfig, ScopedMcpServerConfig};
 use crate::mcp::mcp_tool_name;
 use crate::mcp_client::{McpClientBootstrap, McpClientTransport, McpStdioTransport};
@@ -490,6 +491,7 @@ pub struct McpServerManager {
     unsupported_servers: Vec<UnsupportedMcpServer>,
     tool_index: BTreeMap<String, ToolRoute>,
     next_request_id: u64,
+    capability_policy: CapabilityPolicy,
 }
 
 impl McpServerManager {
@@ -499,12 +501,42 @@ impl McpServerManager {
     }
 
     #[must_use]
+    pub fn from_runtime_config_with_policy(
+        config: &RuntimeConfig,
+        policy: CapabilityPolicy,
+    ) -> Self {
+        Self::from_servers_with_policy(config.mcp().servers(), policy)
+    }
+
+    #[must_use]
     pub fn from_servers(servers: &BTreeMap<String, ScopedMcpServerConfig>) -> Self {
+        Self::from_servers_with_policy(servers, CapabilityPolicy::sovereign())
+    }
+
+    #[must_use]
+    pub fn from_servers_with_policy(
+        servers: &BTreeMap<String, ScopedMcpServerConfig>,
+        policy: CapabilityPolicy,
+    ) -> Self {
         let mut managed_servers = BTreeMap::new();
         let mut unsupported_servers = Vec::new();
 
         for (server_name, server_config) in servers {
-            if server_config.transport() == McpTransport::Stdio {
+            let endpoint = match &server_config.config {
+                crate::config::McpServerConfig::Sse(c)
+                | crate::config::McpServerConfig::Http(c) => Some(c.url.as_str()),
+                crate::config::McpServerConfig::Ws(c) => Some(c.url.as_str()),
+                crate::config::McpServerConfig::ManagedProxy(c) => Some(c.url.as_str()),
+                _ => None,
+            };
+            if !policy.allows_mcp_transport(server_config.transport(), endpoint) {
+                unsupported_servers.push(UnsupportedMcpServer {
+                    server_name: server_name.clone(),
+                    transport: server_config.transport(),
+                    required: server_config.required,
+                    reason: "MCP transport denied by capability policy".to_string(),
+                });
+            } else if server_config.transport() == McpTransport::Stdio {
                 let bootstrap = McpClientBootstrap::from_scoped_config(server_name, server_config);
                 managed_servers.insert(
                     server_name.clone(),
@@ -528,6 +560,7 @@ impl McpServerManager {
             unsupported_servers,
             tool_index: BTreeMap::new(),
             next_request_id: 1,
+            capability_policy: policy,
         }
     }
 

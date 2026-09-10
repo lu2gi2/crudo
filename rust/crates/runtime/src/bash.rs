@@ -390,7 +390,7 @@ mod tests {
             dangerously_disable_sandbox: Some(false),
             namespace_restrictions: Some(false),
             isolate_network: Some(false),
-            filesystem_mode: Some(FilesystemIsolationMode::WorkspaceOnly),
+            filesystem_mode: Some(FilesystemIsolationMode::Off),
             allowed_mounts: None,
         })
         .expect("bash command should execute");
@@ -429,7 +429,7 @@ mod tests {
             dangerously_disable_sandbox: Some(false),
             namespace_restrictions: Some(false),
             isolate_network: Some(false),
-            filesystem_mode: Some(FilesystemIsolationMode::WorkspaceOnly),
+            filesystem_mode: Some(FilesystemIsolationMode::Off),
             allowed_mounts: None,
         })
         .expect("bash command should return structured timeout");
@@ -454,7 +454,7 @@ mod tests {
             dangerously_disable_sandbox: Some(false),
             namespace_restrictions: Some(false),
             isolate_network: Some(false),
-            filesystem_mode: None,
+            filesystem_mode: Some(FilesystemIsolationMode::Off),
             allowed_mounts: None,
         })
         .expect("bash command should execute cleanly");

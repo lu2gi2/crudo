@@ -164,8 +164,16 @@ pub fn resolve_sandbox_status_for_request(request: &SandboxRequest, cwd: &Path) 
     let container = detect_container_environment();
     let namespace_supported = cfg!(target_os = "linux") && unshare_user_namespace_works();
     let network_supported = namespace_supported;
-    let filesystem_active =
-        request.enabled && request.filesystem_mode != FilesystemIsolationMode::Off;
+    let normalized_mounts = normalize_mounts(&request.allowed_mounts, cwd);
+    let mounts_valid = request.filesystem_mode != FilesystemIsolationMode::AllowList
+        || normalized_mounts.is_some();
+    let allowed_mounts = normalized_mounts.unwrap_or_default();
+    let filesystem_supported = cfg!(target_os = "linux")
+        && mounts_valid
+        && filesystem_enforcement_works(cwd, request.filesystem_mode, &allowed_mounts);
+    let filesystem_active = request.enabled
+        && request.filesystem_mode != FilesystemIsolationMode::Off
+        && filesystem_supported;
     let mut fallback_reasons = Vec::new();
 
     if request.enabled && request.namespace_restrictions && !namespace_supported {
@@ -177,6 +185,15 @@ pub fn resolve_sandbox_status_for_request(request: &SandboxRequest, cwd: &Path) 
             .push("network isolation unavailable (requires Linux with `unshare`)".to_string());
     }
     if request.enabled
+        && request.filesystem_mode != FilesystemIsolationMode::Off
+        && !filesystem_supported
+    {
+        fallback_reasons.push(
+            "filesystem isolation unavailable (requires Linux bubblewrap and valid mounts)"
+                .to_string(),
+        );
+    }
+    if request.enabled
         && request.filesystem_mode == FilesystemIsolationMode::AllowList
         && request.allowed_mounts.is_empty()
     {
@@ -186,9 +203,8 @@ pub fn resolve_sandbox_status_for_request(request: &SandboxRequest, cwd: &Path) 
 
     let active = request.enabled
         && (!request.namespace_restrictions || namespace_supported)
-        && (!request.network_isolation || network_supported);
-
-    let allowed_mounts = normalize_mounts(&request.allowed_mounts, cwd);
+        && (!request.network_isolation || network_supported)
+        && (request.filesystem_mode == FilesystemIsolationMode::Off || filesystem_supported);
 
     SandboxStatus {
         enabled: request.enabled,
@@ -201,7 +217,7 @@ pub fn resolve_sandbox_status_for_request(request: &SandboxRequest, cwd: &Path) 
         network_active: request.enabled && request.network_isolation && network_supported,
         filesystem_mode: request.filesystem_mode,
         filesystem_active,
-        allowed_mounts,
+        allowed_mounts: allowed_mounts.clone(),
         in_container: container.in_container,
         container_markers: container.markers,
         execution_allowed: !request.enabled || active,
@@ -215,67 +231,113 @@ pub fn build_linux_sandbox_command(
     cwd: &Path,
     status: &SandboxStatus,
 ) -> Option<LinuxSandboxCommand> {
-    if !cfg!(target_os = "linux")
-        || !status.enabled
-        || (!status.namespace_active && !status.network_active)
-    {
+    if !cfg!(target_os = "linux") || !status.enabled || !status.filesystem_active {
         return None;
     }
 
-    let mut args: Vec<String> = working_unshare_mapping()
-        .unwrap_or(UNSHARE_MAPPING_CANDIDATES[0])
-        .iter()
-        .map(|arg| arg.to_string())
-        .collect();
-    // The candidates already carry the namespace flags, so the probe and the
-    // launcher share a single argument shape; only the opt-in `--net` is
-    // added here.
+    let mut args = vec![
+        "--die-with-parent".to_string(),
+        "--new-session".to_string(),
+        "--unshare-user-try".to_string(),
+        "--unshare-pid".to_string(),
+        "--unshare-uts".to_string(),
+        "--unshare-ipc".to_string(),
+        "--proc".to_string(),
+        "/proc".to_string(),
+        "--dev".to_string(),
+        "/dev".to_string(),
+        "--tmpfs".to_string(),
+        "/tmp".to_string(),
+    ];
     if status.network_active {
-        args.push("--net".to_string());
+        args.push("--unshare-net".to_string());
     }
-    args.push("sh".to_string());
-    args.push("-lc".to_string());
-    args.push(command.to_string());
+    // These are the interpreter's immutable runtime dependencies. Everything
+    // else is absent from the new root unless explicitly mounted below.
+    for path in ["/usr", "/bin", "/sbin", "/lib", "/lib64"] {
+        if Path::new(path).exists() {
+            args.extend(["--ro-bind".into(), path.into(), path.into()]);
+        }
+    }
+    args.extend([
+        "--bind".into(),
+        cwd.display().to_string(),
+        cwd.display().to_string(),
+    ]);
+    if status.filesystem_mode == FilesystemIsolationMode::AllowList {
+        for mount in &status.allowed_mounts {
+            args.extend(["--ro-bind".into(), mount.clone(), mount.clone()]);
+        }
+    }
+    args.extend([
+        "--chdir".into(),
+        cwd.display().to_string(),
+        "sh".into(),
+        "-lc".into(),
+        command.into(),
+    ]);
 
-    let sandbox_home = cwd.join(".sandbox-home");
-    let sandbox_tmp = cwd.join(".sandbox-tmp");
     let mut env = vec![
-        ("HOME".to_string(), sandbox_home.display().to_string()),
-        ("TMPDIR".to_string(), sandbox_tmp.display().to_string()),
-        (
-            "CRUDO_SANDBOX_FILESYSTEM_MODE".to_string(),
-            status.filesystem_mode.as_str().to_string(),
-        ),
-        (
-            "CRUDO_SANDBOX_ALLOWED_MOUNTS".to_string(),
-            status.allowed_mounts.join(":"),
-        ),
+        ("HOME".to_string(), "/tmp/home".to_string()),
+        ("TMPDIR".to_string(), "/tmp".to_string()),
     ];
     if let Ok(path) = env::var("PATH") {
         env.push(("PATH".to_string(), path));
     }
 
     Some(LinuxSandboxCommand {
-        program: "unshare".to_string(),
+        program: "bwrap".to_string(),
         args,
         env,
     })
 }
 
-fn normalize_mounts(mounts: &[String], cwd: &Path) -> Vec<String> {
-    let cwd = cwd.to_path_buf();
-    mounts
-        .iter()
-        .map(|mount| {
-            let path = PathBuf::from(mount);
-            if path.is_absolute() {
-                path
-            } else {
-                cwd.join(path)
-            }
-        })
-        .map(|path| path.display().to_string())
-        .collect()
+fn normalize_mounts(mounts: &[String], cwd: &Path) -> Option<Vec<String>> {
+    let cwd = fs::canonicalize(cwd).ok()?;
+    let mut result = Vec::with_capacity(mounts.len());
+    for mount in mounts {
+        let raw = PathBuf::from(mount);
+        if raw
+            .components()
+            .any(|component| component == std::path::Component::ParentDir)
+        {
+            return None;
+        }
+        let path = if raw.is_absolute() {
+            raw
+        } else {
+            cwd.join(raw)
+        };
+        let canonical = fs::canonicalize(path).ok()?;
+        if !canonical.is_dir() {
+            return None;
+        }
+        let rendered = canonical.display().to_string();
+        if !result.contains(&rendered) {
+            result.push(rendered);
+        }
+    }
+    Some(result)
+}
+
+fn filesystem_enforcement_works(
+    _cwd: &Path,
+    mode: FilesystemIsolationMode,
+    mounts: &[String],
+) -> bool {
+    if mode == FilesystemIsolationMode::Off || !command_exists("bwrap") {
+        return mode == FilesystemIsolationMode::Off;
+    }
+    if mode == FilesystemIsolationMode::AllowList && mounts.is_empty() {
+        return false;
+    }
+    std::process::Command::new("bwrap")
+        .args(["--unshare-user-try", "--ro-bind", "/", "/", "true"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
 fn command_exists(command: &str) -> bool {

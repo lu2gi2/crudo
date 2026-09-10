@@ -61,6 +61,7 @@ pub use approval_tokens::{
 pub use bash::{execute_bash, BashCommandInput, BashCommandOutput};
 pub use bootstrap::{BootstrapPhase, BootstrapPlan};
 pub use branch_lock::{detect_branch_lock_collisions, BranchLockCollision, BranchLockIntent};
+pub use capabilities::{is_loopback_url, Capability, CapabilityMode, CapabilityPolicy};
 pub use compact::{
     compact_session, estimate_session_tokens, format_compact_summary,
     get_compact_continuation_message, should_compact, CompactionConfig, CompactionResult,

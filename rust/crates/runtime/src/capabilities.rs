@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -70,16 +71,40 @@ impl CapabilityPolicy {
 
     #[must_use]
     pub fn allows_endpoint(&self, endpoint: &str) -> bool {
-        if !self.allows(Capability::NetworkAccess) {
-            return false;
-        }
-        endpoint.starts_with("http://127.0.0.1:")
-            || endpoint.starts_with("http://localhost:")
-            || endpoint.starts_with("http://[::1]:")
-            || endpoint.starts_with("https://127.0.0.1:")
-            || endpoint.starts_with("https://localhost:")
-            || endpoint.starts_with("https://[::1]:")
+        self.allows(Capability::NetworkAccess) && is_loopback_url(endpoint)
     }
+
+    #[must_use]
+    pub fn allows_mcp_transport(
+        &self,
+        transport: crate::config::McpTransport,
+        endpoint: Option<&str>,
+    ) -> bool {
+        match transport {
+            crate::config::McpTransport::Stdio | crate::config::McpTransport::Sdk => {
+                self.allows(Capability::LocalMcp)
+            }
+            _ => {
+                self.allows(Capability::RemoteMcp)
+                    && endpoint.is_some_and(|url| self.allows_endpoint(url))
+            }
+        }
+    }
+}
+
+#[must_use]
+pub fn is_loopback_url(value: &str) -> bool {
+    let Ok(url) = Url::parse(value.trim()) else {
+        return false;
+    };
+    if !matches!(url.scheme(), "http" | "https")
+        || url.username() != ""
+        || url.password().is_some()
+        || url.port().is_none()
+    {
+        return false;
+    }
+    matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "::1"))
 }
 
 #[cfg(test)]

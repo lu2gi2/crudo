@@ -2148,6 +2148,7 @@ dependencies = [
  "telemetry",
  "tempfile",
  "tokio",
+ "url",
  "walkdir",
 ]
 
