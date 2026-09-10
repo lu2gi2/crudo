@@ -491,7 +491,6 @@ pub struct McpServerManager {
     unsupported_servers: Vec<UnsupportedMcpServer>,
     tool_index: BTreeMap<String, ToolRoute>,
     next_request_id: u64,
-    capability_policy: CapabilityPolicy,
 }
 
 impl McpServerManager {
@@ -560,7 +559,6 @@ impl McpServerManager {
             unsupported_servers,
             tool_index: BTreeMap::new(),
             next_request_id: 1,
-            capability_policy: policy,
         }
     }
 

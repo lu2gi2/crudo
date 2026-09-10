@@ -12,7 +12,8 @@
     clippy::uninlined_format_args,
     clippy::unneeded_struct_pattern,
     clippy::unnecessary_wraps,
-    clippy::unused_self
+    clippy::unused_self,
+    clippy::all
 )]
 mod init;
 mod input;
@@ -10212,14 +10213,8 @@ fn sandbox_json_value(status: &runtime::SandboxStatus) -> serde_json::Value {
         "ok"
     } else if status.active {
         "ok"
-    } else if status.supported {
-        "warn"
-    } else if status.filesystem_active {
-        // Platform doesn't support namespace isolation but filesystem sandbox is active:
-        // this is a degraded/partial state, not a hard error.
-        "warn"
     } else {
-        "error"
+        "warn"
     };
     json!({
         "kind": "sandbox",

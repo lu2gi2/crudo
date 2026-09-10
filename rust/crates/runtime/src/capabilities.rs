@@ -56,17 +56,20 @@ impl CapabilityPolicy {
 
     #[must_use]
     pub const fn allows(self, capability: Capability) -> bool {
-        match (self.mode, capability) {
+        matches!(
+            (self.mode, capability),
             (_, Capability::LocalModel)
-            | (_, Capability::LocalRag)
-            | (_, Capability::LocalMcp)
-            | (_, Capability::LocalOcr)
-            | (_, Capability::LocalVlm)
-            | (_, Capability::FilesystemAccess)
-            | (_, Capability::SubprocessExecution) => true,
-            (CapabilityMode::Research, Capability::WebSearch | Capability::WebFetch) => true,
-            _ => false,
-        }
+                | (_, Capability::LocalRag)
+                | (_, Capability::LocalMcp)
+                | (_, Capability::LocalOcr)
+                | (_, Capability::LocalVlm)
+                | (_, Capability::FilesystemAccess)
+                | (_, Capability::SubprocessExecution)
+                | (
+                    CapabilityMode::Research,
+                    Capability::WebSearch | Capability::WebFetch
+                )
+        )
     }
 
     #[must_use]
