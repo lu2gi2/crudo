@@ -27,11 +27,17 @@ fn workspace_write_registry() -> GlobalToolRegistry {
 }
 
 fn run_bash(command: &str) -> Result<String, String> {
-    workspace_write_registry().execute("bash", &json!({ "command": command, "filesystemMode": "off", "namespaceRestrictions": false }))
+    workspace_write_registry().execute(
+        "bash",
+        &json!({ "command": command, "filesystemMode": "off", "namespaceRestrictions": false }),
+    )
 }
 
 fn run_powershell(command: &str) -> Result<String, String> {
-    workspace_write_registry().execute("PowerShell", &json!({ "command": command, "filesystemMode": "off", "namespaceRestrictions": false }))
+    workspace_write_registry().execute(
+        "PowerShell",
+        &json!({ "command": command, "filesystemMode": "off", "namespaceRestrictions": false }),
+    )
 }
 
 fn run_read_file(path: &Path) -> Result<String, String> {

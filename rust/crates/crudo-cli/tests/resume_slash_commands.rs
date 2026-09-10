@@ -144,7 +144,10 @@ fn resumed_config_command_loads_settings_files_end_to_end() {
             "/config",
             "model",
         ],
-        &[("CRUDO_CONFIG_HOME", config_home.to_str().expect("utf8 path"))],
+        &[(
+            "CRUDO_CONFIG_HOME",
+            config_home.to_str().expect("utf8 path"),
+        )],
     );
 
     // then
@@ -318,7 +321,10 @@ fn resumed_status_command_emits_structured_json_when_requested() {
             session_path.to_str().expect("utf8 path"),
             "/status",
         ],
-        &[("CRUDO_CONFIG_HOME", config_home.to_str().expect("utf8 path"))],
+        &[(
+            "CRUDO_CONFIG_HOME",
+            config_home.to_str().expect("utf8 path"),
+        )],
     );
 
     // then
