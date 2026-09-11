@@ -18,6 +18,9 @@ status-help.txt
 # Legacy Python port session scratch artifacts
 .port_sessions/
 
+# Crudo-generated HTML artifacts
+/*.html
+
 # Auto-added by Nuvai session-start-governance-check
 .nuvai/reports
 .nuvai/local/
