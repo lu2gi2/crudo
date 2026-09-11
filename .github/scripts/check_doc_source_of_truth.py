@@ -17,12 +17,11 @@ FILES = [
 FILES.extend(sorted((ROOT / 'docs').rglob('*.md')) if (ROOT / 'docs').exists() else [])
 
 FORBIDDEN = {
-    r'github\.com/Yeachan-Heo/crudo(?!-parity)': 'replace old crudo GitHub links with ultraworkers/crudo',
+    r'github\.com/Yeachan-Heo/crudo(?:[/?#)\s]|$)': 'replace old crudo GitHub links with ultraworkers/crudo',
     r'github\.com/code-yeongyu/crudo': 'replace stale alternate crudo GitHub links with ultraworkers/crudo',
     r'discord\.gg/6ztZB9jvWq': 'replace the stale UltraWorkers Discord invite with the current invite',
     r'api\.star-history\.com/svg\?repos=Yeachan-Heo/crudo': 'update star-history embeds to ultraworkers/crudo',
     r'star-history\.com/#Yeachan-Heo/crudo': 'update star-history links to ultraworkers/crudo',
-    r'assets/crudo-hero\.jpeg': 'rename stale hero asset references to assets/crudo-hero.jpeg',
     r'assets/instructkr\.png': 'remove stale instructkr image references',
 }
 
