@@ -31,7 +31,13 @@ cd rust
 cargo build --workspace
 ```
 
-The CLI binary is available at `rust/target/debug/crudo` after a debug build (`rust\target\debug\crudo.exe` on Windows). Make the doctor check above your first post-build step. For PowerShell-first install, release ZIP, PATH, provider-switching, and Windows/WSL notification examples, see [`docs/windows-install-release.md`](./docs/windows-install-release.md).
+The CLI binary is available at `rust/target/debug/crudo` after a debug build (`rust\target\debug\crudo.exe` on Windows). Make the doctor check above your first post-build step. For a provider-neutral install that configures cloud, direct-key, or local mode and installs the `crudo` command, run:
+
+```bash
+bash scripts/install-crudo.sh
+```
+
+The legacy `scripts/install-crudo-luna.sh` remains available for compatibility. For PowerShell-first install, release ZIP, PATH, provider-switching, and Windows/WSL notification examples, see [`docs/windows-install-release.md`](./docs/windows-install-release.md).
 
 ## Quick start
 
@@ -239,6 +245,8 @@ export ANTHROPIC_AUTH_TOKEN="anthropic-oauth-or-proxy-bearer-token"
 ### Which env var goes where
 
 `crudo` accepts two Anthropic credential env vars and they are **not interchangeable** — the HTTP header Anthropic expects differs per credential shape. Putting the wrong value in the wrong slot is the most common 401 we see.
+
+The setup installer also provides named presets for Gemini, Groq, and OpenRouter. These providers use their documented OpenAI-compatible APIs, but they are not OpenAI: Crudo sends the selected provider key to the selected base URL and routes the model through the OpenAI-compatible transport. Run `bash scripts/install-crudo.sh`, choose direct provider mode, and select the provider by name.
 
 | Credential shape | Env var | HTTP header | Typical source |
 |---|---|---|---|

@@ -147,6 +147,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 **PowerShell is a supported Windows path.** Use whichever shell works for you. The common onboarding issues on Windows are:
 
 1. **Install Rust first** — download from <https://rustup.rs/> and run the installer. Close and reopen your terminal when it finishes.
+2. **Configure and install Crudo** — run `bash scripts/install-crudo.sh` and choose cloud endpoint, direct provider key, or local/self-hosted model. Direct mode includes named Gemini, Groq, and OpenRouter presets as well as Anthropic, OpenAI, xAI, DashScope, and custom OpenAI-compatible endpoints. This installs the normal `crudo` command; `scripts/install-crudo-luna.sh` is retained only for compatibility.
 2. **Verify Rust is on PATH:**
    ```powershell
    cargo --version
