@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from office import render_to_pdf
+from ocr import OcrUnavailable, local_ocr_status, run_local_ocr
 from presentation import load_plan, render_plan
 
 ROOT = Path(os.environ.get("CRUDO_DEMO_ROOT", Path(__file__).resolve().parents[1])).resolve()
@@ -21,6 +22,7 @@ for directory in (DATA, WORKSPACE, OUTPUT):
 TOOLS = [
     {"name": "extract_document", "description": "Extract a local document with Docling; returns Markdown and status.", "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
     {"name": "ocr_document", "description": "Run local OCR on an image when PaddleOCR assets are available.", "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
+    {"name": "ocr_status", "description": "Report whether the local PaddleOCR capability is ready.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}},
     {"name": "search_knowledge", "description": "Search the local synthetic knowledge corpus and return citations.", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}},
     {"name": "create_board_presentation", "description": "Create the synthetic truck-fleet board deck directly. Use this for a board-deck request; do not inspect server source or use Bash.", "inputSchema": {"type": "object", "properties": {"output_name": {"type": "string"}}}},
     {"name": "generate_presentation", "description": "Compile an evidence-bound presentation plan into a real editable PPTX. Use only after a plan exists.", "inputSchema": {"type": "object", "properties": {"plan_path": {"type": "string"}, "output_name": {"type": "string"}}, "required": ["plan_path"]}},
@@ -97,33 +99,22 @@ def call_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
     if name == "ocr_document":
         path = safe_path(args["path"])
         try:
-            os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
-            from paddleocr import PaddleOCR
-            ocr = PaddleOCR(lang="en", device="cpu")
-            raw_results = list(ocr.predict(str(path)))
-            pages = []
-            for raw in raw_results:
-                json_value = getattr(raw, "json", None)
-                if callable(json_value):
-                    payload = json_value()
-                elif isinstance(json_value, dict):
-                    payload = json_value
-                else:
-                    payload = {}
-                data = payload.get("res", payload) if isinstance(payload, dict) else {}
-                texts = data.get("rec_texts", [])
-                scores = data.get("rec_scores", [])
-                pages.append({
-                    "page_index": data.get("page_index"),
-                    "texts": texts,
-                    "confidences": scores,
-                    "text": "\n".join(texts),
-                })
-            extracted = "\n\n".join(page["text"] for page in pages)
-            result = {"status": "paddleocr_active", "path": str(path), "pages": pages, "text": extracted, "text_count": len(extracted)}
-            return mcp_result(result, f"OCR completed with PaddleOCR: {path}\nExtracted {len(extracted)} characters from {len(pages)} page(s)")
-        except Exception as exc:
-            return mcp_result({"status": "unavailable", "reason": f"{type(exc).__name__}: {exc}", "path": str(path)}, f"OCR unavailable: {type(exc).__name__}: {exc}", is_error=True)
+            result = run_local_ocr(path)
+            indexed_path = WORKSPACE / f"{path.stem}.ocr.json"
+            indexed_path.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+            result["indexed_path"] = str(indexed_path)
+            return mcp_result(
+                result,
+                f"OCR completed with PaddleOCR: {path}\nExtracted {result['text_count']} characters from {len(result['pages'])} page(s)\nRAG input: {indexed_path}",
+            )
+        except (OcrUnavailable, FileNotFoundError) as exc:
+            return mcp_result(
+                {"status": "unavailable", "capability": "local-ocr", "reason": str(exc), "path": str(path)},
+                f"OCR unavailable: {exc}",
+                is_error=True,
+            )
+    if name == "ocr_status":
+        return mcp_result(local_ocr_status())
     if name == "search_knowledge":
         query = str(args["query"]).lower()
         hits = []

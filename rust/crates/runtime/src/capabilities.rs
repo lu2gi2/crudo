@@ -77,7 +77,19 @@ impl CapabilityPolicy {
         self.allows(Capability::NetworkAccess) && is_loopback_url(endpoint)
     }
 
+    /// Return whether a discovered MCP tool may execute under this policy.
+    ///
+    /// OCR is a local capability even when it is exposed through MCP. Keeping
+    /// this mapping here prevents a local MCP transport from becoming an
+    /// accidental bypass for capability policy.
     #[must_use]
+    pub fn allows_mcp_tool(self, tool_name: &str) -> bool {
+        if tool_name == "ocr_document" || tool_name.ends_with("/ocr_document") {
+            return self.allows(Capability::LocalOcr);
+        }
+        self.allows(Capability::LocalMcp)
+    }
+
     pub fn allows_mcp_transport(
         &self,
         transport: crate::config::McpTransport,
@@ -121,6 +133,17 @@ mod tests {
         assert!(!policy.allows(Capability::NetworkAccess));
         assert!(!policy.allows(Capability::RemoteMcp));
         assert!(policy.allows(Capability::LocalModel));
+    }
+
+    #[test]
+    fn local_ocr_mcp_tool_is_allowed_by_both_modes() {
+        assert!(CapabilityPolicy::sovereign().allows_mcp_tool("ocr_document"));
+        assert!(CapabilityPolicy::research().allows_mcp_tool("industrial/ocr_document"));
+    }
+
+    #[test]
+    fn unknown_mcp_tool_requires_local_mcp_capability() {
+        assert!(CapabilityPolicy::sovereign().allows_mcp_tool("search_knowledge"));
     }
 
     #[test]

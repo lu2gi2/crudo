@@ -52,6 +52,39 @@ fn is_text_extension(path: &Path) -> bool {
         .is_some_and(|e| TEXT_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
 }
 
+fn read_indexable_content(path: &Path) -> Result<String, String> {
+    let raw = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    if path
+        .file_name()
+        .and_then(std::ffi::OsStr::to_str)
+        .is_some_and(|name| name.ends_with(".ocr.json"))
+    {
+        let value: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| format!("invalid OCR result {}: {e}", path.display()))?;
+        let pages = value
+            .get("pages")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| "OCR result is missing pages".to_string())?;
+        let mut text = String::new();
+        for (index, page) in pages.iter().enumerate() {
+            let page_number = page
+                .get("source_page")
+                .or_else(|| page.get("page_index"))
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(index as u64 + 1);
+            let page_text = page
+                .get("text")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("");
+            if !page_text.trim().is_empty() {
+                text.push_str(&format!("[OCR page {page_number}]\n{page_text}\n\n"));
+            }
+        }
+        return Ok(text);
+    }
+    Ok(raw)
+}
+
 async fn flush_path_batch(
     conn: &rusqlite::Connection,
     path: &str,
@@ -122,7 +155,12 @@ pub async fn run_ingest(
                 continue;
             }
             let path = entry.path();
-            if !is_text_extension(path) {
+            if !is_text_extension(path)
+                && !path
+                    .file_name()
+                    .and_then(std::ffi::OsStr::to_str)
+                    .is_some_and(|name| name.ends_with(".ocr.json"))
+            {
                 continue;
             }
             let meta = entry.metadata().map_err(|e| e.to_string())?;
@@ -161,7 +199,7 @@ pub async fn run_ingest(
             .and_then(|d| i64::try_from(d.as_millis()).ok())
             .unwrap_or(0);
 
-        let Ok(raw) = std::fs::read_to_string(&file) else {
+        let Ok(raw) = read_indexable_content(&file) else {
             continue;
         };
 

@@ -279,6 +279,10 @@ pub enum McpServerManagerError {
     UnknownTool {
         qualified_name: String,
     },
+    CapabilityDenied {
+        qualified_name: String,
+        capability: String,
+    },
     UnknownServer {
         server_name: String,
     },
@@ -324,6 +328,13 @@ impl std::fmt::Display for McpServerManagerError {
             Self::UnknownTool { qualified_name } => {
                 write!(f, "unknown MCP tool `{qualified_name}`")
             }
+            Self::CapabilityDenied {
+                qualified_name,
+                capability,
+            } => write!(
+                f,
+                "MCP tool `{qualified_name}` denied by capability policy ({capability})"
+            ),
             Self::UnknownServer { server_name } => write!(f, "unknown MCP server `{server_name}`"),
         }
     }
@@ -338,6 +349,7 @@ impl std::error::Error for McpServerManagerError {
             | Self::InvalidResponse { .. }
             | Self::Timeout { .. }
             | Self::UnknownTool { .. }
+            | Self::CapabilityDenied { .. }
             | Self::UnknownServer { .. } => None,
         }
     }
@@ -357,7 +369,9 @@ impl McpServerManagerError {
             | Self::JsonRpc { method, .. }
             | Self::InvalidResponse { method, .. }
             | Self::Timeout { method, .. } => lifecycle_phase_for_method(method),
-            Self::UnknownTool { .. } => McpLifecyclePhase::ToolDiscovery,
+            Self::UnknownTool { .. } | Self::CapabilityDenied { .. } => {
+                McpLifecyclePhase::ToolDiscovery
+            }
             Self::UnknownServer { .. } => McpLifecyclePhase::ServerRegistration,
         }
     }
@@ -426,6 +440,13 @@ impl McpServerManagerError {
             Self::UnknownTool { qualified_name } => {
                 BTreeMap::from([("qualified_tool".to_string(), qualified_name.clone())])
             }
+            Self::CapabilityDenied {
+                qualified_name,
+                capability,
+            } => BTreeMap::from([
+                ("qualified_tool".to_string(), qualified_name.clone()),
+                ("capability".to_string(), capability.clone()),
+            ]),
             Self::UnknownServer { server_name } => {
                 BTreeMap::from([("server".to_string(), server_name.clone())])
             }
@@ -490,6 +511,7 @@ pub struct McpServerManager {
     servers: BTreeMap<String, ManagedMcpServer>,
     unsupported_servers: Vec<UnsupportedMcpServer>,
     tool_index: BTreeMap<String, ToolRoute>,
+    capability_policy: CapabilityPolicy,
     next_request_id: u64,
 }
 
@@ -558,6 +580,7 @@ impl McpServerManager {
             servers: managed_servers,
             unsupported_servers,
             tool_index: BTreeMap::new(),
+            capability_policy: policy,
             next_request_id: 1,
         }
     }
@@ -684,6 +707,15 @@ impl McpServerManager {
             .ok_or_else(|| McpServerManagerError::UnknownTool {
                 qualified_name: qualified_tool_name.to_string(),
             })?;
+
+        if !self.capability_policy.allows_mcp_tool(qualified_tool_name)
+            && !self.capability_policy.allows_mcp_tool(&route.raw_name)
+        {
+            return Err(McpServerManagerError::CapabilityDenied {
+                qualified_name: qualified_tool_name.to_string(),
+                capability: "local-ocr".to_string(),
+            });
+        }
 
         let timeout_ms = self.tool_call_timeout_ms(&route.server_name)?;
 

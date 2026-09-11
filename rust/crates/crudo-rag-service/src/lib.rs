@@ -75,6 +75,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ingest_indexes_ocr_json_with_page_citations() {
+        std::env::set_var("CRUDO_RAG_MOCK_PROVIDERS", "1");
+        let dir = tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::write(
+            workspace.join("scan.ocr.json"),
+            serde_json::json!({
+                "pages": [{"source_page": 3, "text": "Pump P-101 pressure is 12 bar"}]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let db = dir.path().join("idx.sqlite");
+        let client = Client::new();
+        let cfg = EmbedConfig::mock_from_env().expect("mock");
+        run_ingest(&[workspace], &db, &cfg, &client).await.unwrap();
+        let response = query_index(
+            &db,
+            &client,
+            &cfg,
+            &QueryRequest { query: "Pump P-101".into(), top_k: 4 },
+        )
+        .await
+        .unwrap();
+        assert!(response.hits.iter().any(|hit| hit.snippet.contains("OCR page 3")));
+        std::env::remove_var("CRUDO_RAG_MOCK_PROVIDERS");
+    }
+
+    #[tokio::test]
     async fn ingest_and_query_roundtrip_mock() {
         std::env::set_var("CRUDO_RAG_MOCK_PROVIDERS", "1");
         let dir = tempdir().unwrap();
