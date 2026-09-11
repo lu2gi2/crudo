@@ -38,9 +38,9 @@ use log::debug;
 use api::{
     detect_provider_kind, model_family_identity_for, resolve_startup_auth_source, AnthropicClient,
     AuthSource, ContentBlockDelta, InputContentBlock, InputMessage, MessageRequest,
-    MessageResponse, OutputContentBlock, PromptCache, ProviderClient as ApiProviderClient,
-    ProviderKind, StreamEvent as ApiStreamEvent, ToolChoice, ToolDefinition,
-    ToolResultContentBlock,
+    MessageResponse, MultimodalAttachment, OutputContentBlock, PromptCache,
+    ProviderClient as ApiProviderClient, ProviderKind, StreamEvent as ApiStreamEvent, ToolChoice,
+    ToolDefinition, ToolResultContentBlock,
 };
 
 use commands::{
@@ -2549,6 +2549,80 @@ fn parse_acp_args(args: &[String], output_format: CliOutputFormat) -> Result<Cli
             "unsupported_acp_invocation: unsupported ACP invocation. Use `crudo acp` or `crudo acp serve`.\nACP/Zed editor integration is not implemented yet; `crudo acp serve` reports status only.",
         )),
     }
+}
+
+fn multimodal_user_message(
+    input: &str,
+) -> Result<Option<ConversationMessage>, Box<dyn std::error::Error>> {
+    let workspace = env::current_dir()?;
+    let mut found = None;
+    let candidates = input
+        .split_whitespace()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let mut index = 0;
+    while index < candidates.len() {
+        let first = candidates[index].clone();
+        let mut attempts = vec![first.clone()];
+        if first.starts_with('"') || first.starts_with('\'') {
+            let quote = first.chars().next().unwrap_or('"');
+            let mut joined = first;
+            let mut end = index;
+            while !joined.ends_with(quote) && end + 1 < candidates.len() {
+                end += 1;
+                joined.push(' ');
+                joined.push_str(&candidates[end]);
+            }
+            attempts.push(joined);
+            index = end;
+        } else {
+            // Absolute paths with spaces are also accepted without quotes by
+            // trying progressively longer token spans.
+            let mut joined = first;
+            for end in (index + 1)..candidates.len().min(index + 8) {
+                joined.push(' ');
+                joined.push_str(&candidates[end]);
+                attempts.push(joined.clone());
+            }
+        }
+        for candidate in attempts {
+            let candidate =
+                candidate.trim_matches(|c: char| matches!(c, '"' | '\'' | ',' | ')' | ']' | ':'));
+            let path = Path::new(candidate);
+            if !path.exists() || !path.is_file() {
+                continue;
+            }
+            if let Ok(attachment) = MultimodalAttachment::from_path(path, &workspace) {
+                if matches!(attachment.kind, api::AttachmentKind::Image) {
+                    found = Some(attachment);
+                    break;
+                }
+            }
+        }
+        if found.is_some() {
+            break;
+        }
+        index += 1;
+    }
+    let Some(attachment) = found else {
+        return Ok(None);
+    };
+    let data = attachment
+        .base64_data()
+        .map_err(|error| format!("attachment validation failed: {error:?}"))?;
+    Ok(Some(ConversationMessage {
+        role: MessageRole::User,
+        blocks: vec![
+            ContentBlock::Text {
+                text: input.to_string(),
+            },
+            ContentBlock::Image {
+                media_type: attachment.media_type,
+                data,
+            },
+        ],
+        usage: None,
+    }))
 }
 
 fn try_resolve_bare_skill_prompt(cwd: &Path, trimmed: &str) -> Option<String> {
@@ -7793,6 +7867,9 @@ impl LiveCli {
     }
 
     fn run_turn(&mut self, input: &str) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(message) = multimodal_user_message(input)? {
+            return self.run_turn_with_message(message);
+        }
         let (mut runtime, hook_abort_monitor) = self.prepare_turn_runtime(true)?;
         let mut spinner = Spinner::new();
         let mut stdout = io::stdout();
@@ -8012,6 +8089,37 @@ impl LiveCli {
                 Err(Box::new(error))
             }
         }
+    }
+
+    fn run_turn_with_message(
+        &mut self,
+        message: ConversationMessage,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (mut runtime, hook_abort_monitor) = self.prepare_turn_runtime(true)?;
+        let mut spinner = Spinner::new();
+        let mut stdout = io::stdout();
+        spinner.tick(
+            "◈ Thinking...",
+            TerminalRenderer::new().color_theme(),
+            &mut stdout,
+        )?;
+        let mut permission_prompter = CliPermissionPrompter::new(self.permission_mode);
+        let result = runtime.run_turn_with_message(message, Some(&mut permission_prompter));
+        hook_abort_monitor.stop();
+        let summary = result?;
+        self.replace_runtime(runtime)?;
+        spinner.finish(
+            "✨ Done",
+            TerminalRenderer::new().color_theme(),
+            &mut stdout,
+        )?;
+        let final_text = final_assistant_text(&summary);
+        if !final_text.is_empty() {
+            println!("{final_text}");
+        }
+        println!();
+        self.persist_session()?;
+        Ok(())
     }
 
     fn run_turn_with_output(
@@ -11709,6 +11817,9 @@ fn render_export_text(session: &Session) -> String {
             match block {
                 ContentBlock::Text { text } => lines.push(text.clone()),
                 ContentBlock::Thinking { .. } => {}
+                ContentBlock::Image { media_type, .. } => {
+                    lines.push(format!("[image attachment: {media_type}]"));
+                }
                 ContentBlock::ToolUse { id, name, input } => {
                     lines.push(format!("[tool_use id={id} name={name}] {input}"));
                 }
@@ -11947,6 +12058,9 @@ fn render_session_markdown(session: &Session, session_id: &str, session_path: &P
                     }
                 }
                 ContentBlock::Thinking { .. } => {}
+                ContentBlock::Image { media_type, .. } => {
+                    lines.push(format!("[image attachment: {media_type}]"));
+                }
                 ContentBlock::ToolUse { id, name, input } => {
                     lines.push(format!(
                         "**Tool call** `{name}` _(id `{}`)_",
@@ -14279,6 +14393,10 @@ fn convert_messages(messages: &[ConversationMessage]) -> Vec<InputMessage> {
                     ContentBlock::Text { text } => {
                         Some(InputContentBlock::Text { text: text.clone() })
                     }
+                    ContentBlock::Image { media_type, data } => Some(InputContentBlock::Image {
+                        media_type: media_type.clone(),
+                        data: data.clone(),
+                    }),
                     ContentBlock::Thinking {
                         thinking,
                         signature,

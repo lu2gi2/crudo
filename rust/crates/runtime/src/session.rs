@@ -34,6 +34,10 @@ pub enum ContentBlock {
     Text {
         text: String,
     },
+    Image {
+        media_type: String,
+        data: String,
+    },
     Thinking {
         thinking: String,
         signature: Option<String>,
@@ -824,6 +828,14 @@ impl ContentBlock {
                 object.insert("type".to_string(), JsonValue::String("text".to_string()));
                 object.insert("text".to_string(), JsonValue::String(text.clone()));
             }
+            Self::Image { media_type, data } => {
+                object.insert("type".to_string(), JsonValue::String("image".to_string()));
+                object.insert(
+                    "media_type".to_string(),
+                    JsonValue::String(media_type.clone()),
+                );
+                object.insert("data".to_string(), JsonValue::String(data.clone()));
+            }
             Self::Thinking {
                 thinking,
                 signature,
@@ -885,6 +897,10 @@ impl ContentBlock {
         {
             "text" => Ok(Self::Text {
                 text: required_string(object, "text")?,
+            }),
+            "image" => Ok(Self::Image {
+                media_type: required_string(object, "media_type")?,
+                data: required_string(object, "data")?,
             }),
             "thinking" => Ok(Self::Thinking {
                 thinking: required_string(object, "thinking")?,
@@ -1071,6 +1087,17 @@ fn persisted_block_json(block: &ContentBlock) -> JsonValue {
             object.insert(
                 "text".to_string(),
                 JsonValue::String(sanitize_jsonl_field(text)),
+            );
+        }
+        ContentBlock::Image { media_type, data } => {
+            object.insert("type".to_string(), JsonValue::String("image".to_string()));
+            object.insert(
+                "media_type".to_string(),
+                JsonValue::String(media_type.clone()),
+            );
+            object.insert(
+                "data".to_string(),
+                JsonValue::String(sanitize_jsonl_field(data)),
             );
         }
         ContentBlock::Thinking {

@@ -5400,6 +5400,10 @@ fn convert_messages(messages: &[ConversationMessage]) -> Vec<InputMessage> {
                 .iter()
                 .map(|block| match block {
                     ContentBlock::Text { text } => InputContentBlock::Text { text: text.clone() },
+                    ContentBlock::Image { media_type, data } => InputContentBlock::Image {
+                        media_type: media_type.clone(),
+                        data: data.clone(),
+                    },
                     ContentBlock::Thinking {
                         thinking,
                         signature,

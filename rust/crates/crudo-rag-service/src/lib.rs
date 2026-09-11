@@ -96,11 +96,17 @@ mod tests {
             &db,
             &client,
             &cfg,
-            &QueryRequest { query: "Pump P-101".into(), top_k: 4 },
+            &QueryRequest {
+                query: "Pump P-101".into(),
+                top_k: 4,
+            },
         )
         .await
         .unwrap();
-        assert!(response.hits.iter().any(|hit| hit.snippet.contains("OCR page 3")));
+        assert!(response
+            .hits
+            .iter()
+            .any(|hit| hit.snippet.contains("OCR page 3")));
         std::env::remove_var("CRUDO_RAG_MOCK_PROVIDERS");
     }
 

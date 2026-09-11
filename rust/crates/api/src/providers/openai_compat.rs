@@ -1273,6 +1273,7 @@ pub fn translate_message(message: &InputMessage, model: &str) -> Vec<Value> {
                     InputContentBlock::Thinking {
                         thinking: value, ..
                     } => reasoning.push_str(value),
+                    InputContentBlock::Image { .. } => {}
                     InputContentBlock::ToolUse { id, name, input } => tool_calls.push(json!({
                         "id": id,
                         "type": "function",
@@ -1314,6 +1315,13 @@ pub fn translate_message(message: &InputMessage, model: &str) -> Vec<Value> {
                 InputContentBlock::Text { text } => Some(json!({
                     "role": "user",
                     "content": text,
+                })),
+                InputContentBlock::Image { media_type, data } => Some(json!({
+                    "role": "user",
+                    "content": [{
+                        "type": "image_url",
+                        "image_url": {"url": format!("data:{media_type};base64,{data}")}
+                    }],
                 })),
                 InputContentBlock::ToolResult {
                     tool_use_id,
