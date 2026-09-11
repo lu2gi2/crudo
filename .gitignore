@@ -36,3 +36,6 @@ status-help.txt
 .nuvai/audits
 
 target/
+
+# Local CRUDO session data
+crudo-tui/.crudo/

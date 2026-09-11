@@ -636,10 +636,10 @@ pub fn sanitize_error_message(err: &str) -> String {
 /// TUI -> RealAgentAdapter -> ConversationRuntime -> ToolExecutor -> GlobalToolRegistry -> Actual Tools
 #[allow(dead_code)]
 pub struct RealAgentAdapter {
-    model: Option<String>,
+    model: Arc<Mutex<Option<String>>>,
     provider_client: Option<ProviderClient>,
     tool_registry: Option<GlobalToolRegistry>,
-    permission_mode: Option<PermissionMode>,
+    permission_mode: Arc<Mutex<Option<PermissionMode>>>,
     session: Arc<Mutex<Session>>,
     timeout: Option<std::time::Duration>,
 }
@@ -651,10 +651,10 @@ unsafe impl Sync for RealAgentAdapter {}
 impl RealAgentAdapter {
     pub fn new() -> Self {
         Self {
-            model: None,
+            model: Arc::new(Mutex::new(None)),
             provider_client: None,
             tool_registry: None,
-            permission_mode: None,
+            permission_mode: Arc::new(Mutex::new(None)),
             session: Arc::new(Mutex::new(Session::new())),
             timeout: None,
         }
@@ -662,10 +662,10 @@ impl RealAgentAdapter {
 
     pub fn with_model(model: impl Into<String>) -> Self {
         Self {
-            model: Some(model.into()),
+            model: Arc::new(Mutex::new(Some(model.into()))),
             provider_client: None,
             tool_registry: None,
-            permission_mode: None,
+            permission_mode: Arc::new(Mutex::new(None)),
             session: Arc::new(Mutex::new(Session::new())),
             timeout: None,
         }
@@ -673,10 +673,10 @@ impl RealAgentAdapter {
 
     pub fn with_client(client: ProviderClient) -> Self {
         Self {
-            model: None,
+            model: Arc::new(Mutex::new(None)),
             provider_client: Some(client),
             tool_registry: None,
-            permission_mode: None,
+            permission_mode: Arc::new(Mutex::new(None)),
             session: Arc::new(Mutex::new(Session::new())),
             timeout: None,
         }
@@ -687,10 +687,10 @@ impl RealAgentAdapter {
         tool_registry: Option<GlobalToolRegistry>,
     ) -> Self {
         Self {
-            model: None,
+            model: Arc::new(Mutex::new(None)),
             provider_client,
             tool_registry,
-            permission_mode: None,
+            permission_mode: Arc::new(Mutex::new(None)),
             session: Arc::new(Mutex::new(Session::new())),
             timeout: None,
         }
@@ -702,7 +702,7 @@ impl RealAgentAdapter {
     }
 
     pub fn with_permission_mode(mut self, mode: PermissionMode) -> Self {
-        self.permission_mode = Some(mode);
+        self.permission_mode = Arc::new(Mutex::new(Some(mode)));
         self
     }
 
@@ -720,9 +720,42 @@ impl RealAgentAdapter {
         self.session.clone()
     }
 
+    pub fn set_session(&self, session: Session) {
+        if let Ok(mut guard) = self.session.lock() {
+            *guard = session;
+        }
+    }
+
+    pub fn get_session(&self) -> Session {
+        self.session
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_else(|_| Session::new())
+    }
+
     pub fn reset_session(&self) {
         if let Ok(mut guard) = self.session.lock() {
             *guard = Session::new();
+        }
+    }
+
+    pub fn model(&self) -> Option<String> {
+        self.model.lock().ok().and_then(|g| g.clone())
+    }
+
+    pub fn set_model(&self, model: impl Into<String>) {
+        if let Ok(mut guard) = self.model.lock() {
+            *guard = Some(model.into());
+        }
+    }
+
+    pub fn permission_mode(&self) -> Option<PermissionMode> {
+        self.permission_mode.lock().ok().and_then(|g| *g)
+    }
+
+    pub fn set_permission_mode(&self, mode: PermissionMode) {
+        if let Ok(mut guard) = self.permission_mode.lock() {
+            *guard = Some(mode);
         }
     }
 }
@@ -738,6 +771,30 @@ impl Agent for RealAgentAdapter {
         "RealAgentAdapter"
     }
 
+    fn set_session(&self, session: Session) {
+        self.set_session(session);
+    }
+
+    fn get_session(&self) -> Option<Session> {
+        Some(self.get_session())
+    }
+
+    fn model(&self) -> Option<String> {
+        self.model()
+    }
+
+    fn set_model(&self, model: String) {
+        self.set_model(model);
+    }
+
+    fn permission_mode(&self) -> Option<PermissionMode> {
+        self.permission_mode()
+    }
+
+    fn set_permission_mode(&self, mode: PermissionMode) {
+        self.set_permission_mode(mode);
+    }
+
     fn execute(
         &self,
         prompt: String,
@@ -745,13 +802,13 @@ impl Agent for RealAgentAdapter {
         mut cancel_rx: watch::Receiver<bool>,
         run_id: usize,
     ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
-        let model_override = self.model.clone();
+        let model_override = self.model();
         let preconfigured_client = self.provider_client.clone();
         let tool_registry = self
             .tool_registry
             .clone()
             .unwrap_or_else(GlobalToolRegistry::builtin);
-        let permission_mode_override = self.permission_mode;
+        let permission_mode_override = self.permission_mode();
         let session_arc = self.session.clone();
         let turn_timeout = self.timeout.or_else(|| {
             std::env::var("CRUDO_TURN_TIMEOUT_SECS")
@@ -961,7 +1018,7 @@ mod tests {
     fn test_real_agent_adapter_construction() {
         let adapter = RealAgentAdapter::new();
         assert_eq!(adapter.name(), "RealAgentAdapter");
-        assert!(adapter.model.is_none());
+        assert!(adapter.model.lock().unwrap().is_none());
         assert!(adapter.provider_client.is_none());
         assert!(adapter.tool_registry.is_none());
     }
@@ -4099,6 +4156,195 @@ mod tests {
                 ContentBlock::Text { text } => text.contains("[Cancelled by user]"),
                 _ => false,
             })));
+    }
+
+    #[test]
+    fn test_real_agent_adapter_with_persistent_session_preserves_metadata() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("crudo_real_persist_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+        let coordinator =
+            crate::session::SessionCoordinator::from_cwd(&temp_dir).expect("create coordinator");
+        let mut session = coordinator.active_session().clone();
+        session
+            .push_user_text("Prior question")
+            .expect("push user text");
+        let _ = session.push_prompt_entry("Prior prompt");
+
+        let adapter = RealAgentAdapter::new().with_session(session.clone());
+        let adapter_session = adapter.get_session();
+
+        assert_eq!(adapter_session.session_id, session.session_id);
+        assert_eq!(
+            adapter_session.persistence_path(),
+            session.persistence_path()
+        );
+        assert_eq!(adapter_session.workspace_root(), session.workspace_root());
+        assert_eq!(adapter_session.messages, session.messages);
+        assert_eq!(adapter_session.prompt_history, session.prompt_history);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_real_agent_adapter_set_session_updates_in_place() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("crudo_real_set_session_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+        let adapter = RealAgentAdapter::new();
+        let initial_id = adapter.get_session().session_id;
+
+        let coordinator =
+            crate::session::SessionCoordinator::from_cwd(&temp_dir).expect("create coordinator");
+        let persistent_session = coordinator.active_session().clone();
+
+        assert_ne!(initial_id, persistent_session.session_id);
+        adapter.set_session(persistent_session.clone());
+
+        let current = adapter.get_session();
+        assert_eq!(current.session_id, persistent_session.session_id);
+        assert_eq!(
+            current.persistence_path(),
+            persistent_session.persistence_path()
+        );
+        assert_eq!(
+            current.workspace_root(),
+            persistent_session.workspace_root()
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_real_agent_adapter_execution_preserves_persistent_session_and_writes_to_disk() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("crudo_real_exec_persist_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+        let coordinator =
+            crate::session::SessionCoordinator::from_cwd(&temp_dir).expect("create coordinator");
+        let initial_session = coordinator.active_session().clone();
+        let expected_session_id = initial_session.session_id.clone();
+        let expected_persistence_path = initial_session
+            .persistence_path()
+            .expect("persistence path")
+            .to_path_buf();
+        let expected_workspace_root = initial_session
+            .workspace_root()
+            .expect("workspace root")
+            .to_path_buf();
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let mut buffer = Vec::new();
+                loop {
+                    let mut chunk = [0u8; 1024];
+                    let Ok(n) = socket.read(&mut chunk).await else {
+                        break;
+                    };
+                    if n == 0 {
+                        break;
+                    }
+                    buffer.extend_from_slice(&chunk[..n]);
+                    if buffer.windows(4).any(|w| w == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+
+                let req = String::from_utf8_lossy(&buffer);
+                if req.contains("/count_tokens") {
+                    let body = r#"{"input_tokens":5}"#;
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = socket.write_all(resp.as_bytes()).await;
+                    let _ = socket.shutdown().await;
+                    continue;
+                }
+
+                let headers = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n";
+                let part = concat!(
+                    "event: message_start\n",
+                    "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_persist\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":5,\"output_tokens\":0}}}\n\n",
+                    "event: content_block_start\n",
+                    "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+                    "event: content_block_delta\n",
+                    "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Persistent response.\"}}\n\n",
+                    "event: content_block_stop\n",
+                    "data: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+                    "event: message_stop\n",
+                    "data: {\"type\":\"message_stop\"}\n\n",
+                    "data: [DONE]\n\n"
+                );
+                let _ = socket.write_all(headers.as_bytes()).await;
+                let _ = socket.write_all(part.as_bytes()).await;
+                let _ = socket.shutdown().await;
+                break;
+            }
+        });
+
+        let anthropic = AnthropicClient::new("test-key")
+            .with_base_url(format!("http://{addr}"))
+            .with_retry_policy(0, std::time::Duration::ZERO, std::time::Duration::ZERO);
+        let provider = ProviderClient::Anthropic(anthropic);
+        let adapter = RealAgentAdapter::with_client(provider).with_session(initial_session);
+
+        let (tx, mut rx) = mpsc::channel(16);
+        let (_cancel_tx, cancel_rx) = watch::channel(false);
+
+        adapter
+            .execute("Prompt for persistent turn".to_string(), tx, cancel_rx, 701)
+            .await;
+
+        let mut completed = false;
+        while let Some((_, ev)) = rx.recv().await {
+            if matches!(ev, AgentEvent::Completed) {
+                completed = true;
+                break;
+            }
+        }
+        assert!(completed, "Turn should complete successfully");
+
+        // Verify in-memory adapter session retained all persistence metadata
+        let current_session = adapter.get_session();
+        assert_eq!(current_session.session_id, expected_session_id);
+        assert_eq!(
+            current_session.persistence_path(),
+            Some(expected_persistence_path.as_path())
+        );
+        assert_eq!(
+            current_session.workspace_root(),
+            Some(expected_workspace_root.as_path())
+        );
+        assert_eq!(current_session.messages.len(), 2);
+
+        // Verify incremental JSONL file was written to disk
+        assert!(
+            expected_persistence_path.exists(),
+            "Session JSONL file must exist on disk"
+        );
+        let disk_content =
+            std::fs::read_to_string(&expected_persistence_path).expect("read session jsonl");
+        assert!(
+            disk_content.contains("Prompt for persistent turn"),
+            "JSONL file must contain user prompt"
+        );
+        assert!(
+            disk_content.contains("Persistent response."),
+            "JSONL file must contain assistant response"
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]

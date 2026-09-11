@@ -12,7 +12,7 @@ pub enum MessageStatus {
     Error,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
     pub id: usize,
     pub role: Role,
@@ -27,6 +27,15 @@ impl Message {
             role,
             content,
             status: MessageStatus::Pending,
+        }
+    }
+
+    pub fn completed(id: usize, role: Role, content: String) -> Self {
+        Self {
+            id,
+            role,
+            content,
+            status: MessageStatus::Complete,
         }
     }
 }

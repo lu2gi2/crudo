@@ -33,6 +33,7 @@ impl Default for AgentState {
 
 pub enum UserEvent {
     SendMessage(String),
+    ExecuteSlash(String),
     CancelAgent,
 }
 
@@ -225,10 +226,15 @@ impl App {
                 if !value.is_empty() {
                     self.return_to_idle();
                     self.input_history.push(value.clone());
-                    self.events.push(UserEvent::SendMessage(value));
+                    if crate::command::is_slash_command(&value) {
+                        self.events.push(UserEvent::ExecuteSlash(value));
+                    } else {
+                        self.events.push(UserEvent::SendMessage(value));
+                    }
                     self.input_state.clear();
                 }
             }
+
             AppCommand::InsertChar(c) => {
                 self.input_state.insert_char(c);
             }
@@ -347,6 +353,13 @@ impl App {
                     perm.responder.respond(decision);
                 }
             }
+            AppCommand::SetInput(val) => {
+                self.input_state.set_value(val);
+                self.focus = Focus::Input;
+            }
+            AppCommand::ExecuteSlash(cmd) => {
+                self.events.push(UserEvent::ExecuteSlash(cmd));
+            }
         }
     }
 
@@ -355,6 +368,19 @@ impl App {
         self.next_id += 1;
         self.messages.push(msg);
         self.chat_scroll.notify_new_item();
+    }
+
+    /// Hydrates the chat conversation area from an existing persisted [`runtime::Session`].
+    ///
+    /// Converts existing user and assistant text messages into TUI messages in chronological
+    /// order and restores scroll position while preserving input focus and empty-state behavior.
+    pub fn hydrate_from_session(&mut self, session: &runtime::Session) {
+        let restored = crate::session::session_to_tui_messages(session);
+        let count = restored.len();
+        self.messages = restored;
+        self.next_id = count + 1;
+        self.chat_scroll.auto_scroll = true;
+        self.chat_scroll.unseen_items = 0;
     }
 
     pub fn start_activity(&mut self, tool: String, summary: String) -> usize {
@@ -2121,5 +2147,281 @@ mod tests {
         // Stale rust response MUST NOT appear in message 3
         assert!(!app.messages[3].content.contains("what is rust"));
         assert!(!app.messages[3].content.contains("friendly response"));
+    }
+
+    #[test]
+    fn test_hydration_empty_session_hydrates_to_empty_messages() {
+        let mut app = App::new();
+        let session = runtime::Session::new();
+        app.hydrate_from_session(&session);
+
+        assert!(app.messages.is_empty());
+        assert_eq!(app.messages.len(), 0);
+        assert_eq!(app.focus, Focus::Input);
+    }
+
+    #[test]
+    fn test_hydration_user_assistant_exchange_correct_order() {
+        let mut app = App::new();
+        let mut session = runtime::Session::new();
+        session.push_user_text("What is Rust?").expect("push user");
+        session
+            .push_message(runtime::ConversationMessage::assistant(vec![
+                runtime::ContentBlock::Text {
+                    text: "Rust is a systems programming language.".to_string(),
+                },
+            ]))
+            .unwrap();
+
+        app.hydrate_from_session(&session);
+
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].id, 1);
+        assert_eq!(app.messages[0].role, Role::User);
+        assert_eq!(app.messages[0].content, "What is Rust?");
+        assert_eq!(
+            app.messages[0].status,
+            crate::message::MessageStatus::Complete
+        );
+
+        assert_eq!(app.messages[1].id, 2);
+        assert_eq!(app.messages[1].role, Role::Assistant);
+        assert_eq!(
+            app.messages[1].content,
+            "Rust is a systems programming language."
+        );
+        assert_eq!(
+            app.messages[1].status,
+            crate::message::MessageStatus::Complete
+        );
+    }
+
+    #[test]
+    fn test_hydration_multiple_turns_preserve_chronological_ordering() {
+        let mut app = App::new();
+        let mut session = runtime::Session::new();
+
+        session.push_user_text("Turn 1 Question").unwrap();
+        session
+            .push_message(runtime::ConversationMessage::assistant(vec![
+                runtime::ContentBlock::Text {
+                    text: "Turn 1 Answer".to_string(),
+                },
+            ]))
+            .unwrap();
+        session.push_user_text("Turn 2 Question").unwrap();
+        session
+            .push_message(runtime::ConversationMessage::assistant(vec![
+                runtime::ContentBlock::Text {
+                    text: "Turn 2 Answer".to_string(),
+                },
+            ]))
+            .unwrap();
+        session.push_user_text("Turn 3 Question").unwrap();
+        session
+            .push_message(runtime::ConversationMessage::assistant(vec![
+                runtime::ContentBlock::Text {
+                    text: "Turn 3 Answer".to_string(),
+                },
+            ]))
+            .unwrap();
+
+        app.hydrate_from_session(&session);
+
+        assert_eq!(app.messages.len(), 6);
+        let expected = vec![
+            (Role::User, "Turn 1 Question"),
+            (Role::Assistant, "Turn 1 Answer"),
+            (Role::User, "Turn 2 Question"),
+            (Role::Assistant, "Turn 2 Answer"),
+            (Role::User, "Turn 3 Question"),
+            (Role::Assistant, "Turn 3 Answer"),
+        ];
+
+        for (i, (expected_role, expected_content)) in expected.into_iter().enumerate() {
+            assert_eq!(app.messages[i].id, i + 1);
+            assert_eq!(app.messages[i].role, expected_role);
+            assert_eq!(app.messages[i].content, expected_content);
+            assert_eq!(
+                app.messages[i].status,
+                crate::message::MessageStatus::Complete
+            );
+        }
+    }
+
+    #[test]
+    fn test_hydration_ignores_internal_blocks_and_produces_no_side_effects() {
+        let mut app = App::new();
+        let mut session = runtime::Session::new();
+
+        // 1. User message
+        session.push_user_text("Read a file").unwrap();
+
+        // 2. Assistant message with Thinking and ToolUse blocks, but NO text block
+        session
+            .push_message(runtime::ConversationMessage {
+                role: runtime::MessageRole::Assistant,
+                blocks: vec![
+                    runtime::ContentBlock::Thinking {
+                        thinking: "I should read foo.txt".to_string(),
+                        signature: None,
+                    },
+                    runtime::ContentBlock::ToolUse {
+                        id: "tool-1".to_string(),
+                        name: "read_file".to_string(),
+                        input: "{\"path\": \"foo.txt\"}".to_string(),
+                    },
+                ],
+                usage: None,
+            })
+            .unwrap();
+
+        // 3. Tool result message (MessageRole::Tool)
+        session
+            .push_message(runtime::ConversationMessage::tool_result(
+                "tool-1",
+                "read_file",
+                "file contents here",
+                false,
+            ))
+            .unwrap();
+
+        // 4. Assistant message with tool output explanation text
+        session
+            .push_message(runtime::ConversationMessage::assistant(vec![
+                runtime::ContentBlock::Text {
+                    text: "The file contains: file contents here".to_string(),
+                },
+            ]))
+            .unwrap();
+
+        app.hydrate_from_session(&session);
+
+        // Should ONLY have user message and the text assistant message (2 messages)
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].role, Role::User);
+        assert_eq!(app.messages[0].content, "Read a file");
+        assert_eq!(app.messages[1].role, Role::Assistant);
+        assert_eq!(
+            app.messages[1].content,
+            "The file contains: file contents here"
+        );
+
+        // Assert NO side effects on agent/activities/events
+        assert!(app.activities.is_empty(), "No activities should be created");
+        assert!(app.events.is_empty(), "No user events should be emitted");
+        assert!(
+            app.pending_permission.is_none(),
+            "No permission prompts should be queued"
+        );
+        assert_eq!(
+            app.agent_state,
+            AgentState::Idle,
+            "Agent state must remain Idle"
+        );
+        assert_eq!(app.active_run_id, None, "Active run id must remain None");
+        assert_eq!(app.focus, Focus::Input, "Focus must remain on input box");
+    }
+
+    #[test]
+    fn test_hydration_does_not_modify_or_overwrite_persisted_session() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("crudo_hydrate_disk_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let session_file = temp_dir.join("test_session.jsonl");
+        let mut session = runtime::Session::new().with_persistence_path(&session_file);
+        session.push_user_text("Persistent prompt").unwrap();
+        session
+            .push_message(runtime::ConversationMessage::assistant(vec![
+                runtime::ContentBlock::Text {
+                    text: "Persistent response".to_string(),
+                },
+            ]))
+            .unwrap();
+        session.save_to_path(&session_file).unwrap();
+
+        let file_bytes_before = std::fs::read(&session_file).unwrap();
+        let message_count_before = session.messages.len();
+
+        let mut app = App::new();
+        app.hydrate_from_session(&session);
+
+        let file_bytes_after = std::fs::read(&session_file).unwrap();
+        assert_eq!(
+            file_bytes_before, file_bytes_after,
+            "Session file on disk must NOT be modified by hydration"
+        );
+        assert_eq!(
+            session.messages.len(),
+            message_count_before,
+            "Session messages count in memory must NOT be modified"
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_hydration_preserves_session_metadata() {
+        let mut session = runtime::Session::new()
+            .with_workspace_root("C:\\dummy\\workspace")
+            .with_persistence_path("C:\\dummy\\session.jsonl");
+        session
+            .push_user_text("Checking metadata preservation")
+            .unwrap();
+
+        let expected_id = session.session_id.clone();
+        let expected_ws = session.workspace_root().map(|p| p.to_path_buf());
+        let expected_path = session.persistence_path().map(|p| p.to_path_buf());
+
+        let mut app = App::new();
+        app.hydrate_from_session(&session);
+
+        assert_eq!(session.session_id, expected_id);
+        assert_eq!(
+            session.workspace_root().map(|p| p.to_path_buf()),
+            expected_ws
+        );
+        assert_eq!(
+            session.persistence_path().map(|p| p.to_path_buf()),
+            expected_path
+        );
+    }
+
+    #[test]
+    fn test_subsequent_user_message_after_hydration_has_incremented_id() {
+        let mut app = App::new();
+        let mut session = runtime::Session::new();
+        session.push_user_text("Initial prompt").unwrap();
+        session
+            .push_message(runtime::ConversationMessage::assistant(vec![
+                runtime::ContentBlock::Text {
+                    text: "Initial response".to_string(),
+                },
+            ]))
+            .unwrap();
+
+        app.hydrate_from_session(&session);
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].id, 1);
+        assert_eq!(app.messages[1].id, 2);
+
+        app.add_message(Role::User, "Follow-up prompt".to_string());
+        assert_eq!(app.messages.len(), 3);
+        assert_eq!(app.messages[2].id, 3);
+        assert_eq!(app.messages[2].role, Role::User);
+        assert_eq!(app.messages[2].content, "Follow-up prompt");
+    }
+
+    #[test]
+    fn test_hydration_sets_chat_scroll_state() {
+        let mut app = App::new();
+        let mut session = runtime::Session::new();
+        session.push_user_text("Hello").unwrap();
+
+        app.hydrate_from_session(&session);
+        assert!(app.chat_scroll.auto_scroll);
+        assert_eq!(app.chat_scroll.unseen_items, 0);
     }
 }

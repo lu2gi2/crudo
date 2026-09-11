@@ -48,6 +48,36 @@ impl AgentController {
     }
 
     #[allow(dead_code)]
+    pub fn set_session(&self, session: runtime::Session) {
+        self.agent.set_session(session);
+    }
+
+    #[allow(dead_code)]
+    pub fn get_session(&self) -> Option<runtime::Session> {
+        self.agent.get_session()
+    }
+
+    #[allow(dead_code)]
+    pub fn model(&self) -> Option<String> {
+        self.agent.model()
+    }
+
+    #[allow(dead_code)]
+    pub fn set_model(&self, model: String) {
+        self.agent.set_model(model);
+    }
+
+    #[allow(dead_code)]
+    pub fn permission_mode(&self) -> Option<runtime::PermissionMode> {
+        self.agent.permission_mode()
+    }
+
+    #[allow(dead_code)]
+    pub fn set_permission_mode(&self, mode: runtime::PermissionMode) {
+        self.agent.set_permission_mode(mode);
+    }
+
+    #[allow(dead_code)]
     pub fn is_running(&self) -> bool {
         self.is_running
     }

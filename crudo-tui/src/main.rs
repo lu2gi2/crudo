@@ -9,6 +9,7 @@ mod markdown;
 mod message;
 mod palette;
 mod scroll;
+mod session;
 mod shortcuts;
 mod spinner;
 mod terminal;
@@ -85,8 +86,11 @@ fn init_logging() -> Option<PathBuf> {
 async fn main() -> Result<()> {
     let _log_file = init_logging();
 
+    let mut session_coordinator = session::SessionCoordinator::startup()?;
+
     let mut term = terminal::init_terminal()?;
     let mut app = App::new();
+    app.hydrate_from_session(session_coordinator.active_session());
     let mut events = EventHandler::new(250);
     let use_mock = std::env::var("TERMINA_MOCK")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
@@ -94,10 +98,19 @@ async fn main() -> Result<()> {
     let mut agent_controller = if use_mock {
         AgentController::new()
     } else {
-        AgentController::with_agent(crate::agent::real::RealAgentAdapter::new())
+        let adapter = crate::agent::real::RealAgentAdapter::new()
+            .with_session(session_coordinator.active_session().clone());
+        AgentController::with_agent(adapter)
     };
 
-    let res = run_app(&mut term, &mut app, &mut events, &mut agent_controller).await;
+    let res = run_app(
+        &mut term,
+        &mut app,
+        &mut events,
+        &mut agent_controller,
+        &mut session_coordinator,
+    )
+    .await;
 
     terminal::restore_terminal()?;
 
@@ -113,6 +126,7 @@ async fn run_app(
     app: &mut App,
     events: &mut EventHandler,
     agent_controller: &mut AgentController,
+    session_coordinator: &mut session::SessionCoordinator,
 ) -> Result<()> {
     let (agent_tx, mut agent_rx) =
         tokio::sync::mpsc::channel::<(usize, agent::events::AgentEvent)>(32);
@@ -171,6 +185,14 @@ async fn run_app(
                     app.add_message(message::Role::User, text.clone());
                     let run_id = agent_controller.submit_prompt(text, agent_tx.clone());
                     app.set_active_run_id(Some(run_id));
+                }
+                UserEvent::ExecuteSlash(cmd) => {
+                    let mut ctx = command::CommandContext {
+                        app,
+                        session_coordinator,
+                        agent_controller,
+                    };
+                    command::execute_slash_command(&cmd, &mut ctx);
                 }
                 UserEvent::CancelAgent => {
                     agent_controller.cancel();

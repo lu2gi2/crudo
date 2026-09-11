@@ -10,7 +10,7 @@ pub struct PaletteCommand {
 }
 
 pub fn default_commands() -> Vec<PaletteCommand> {
-    vec![
+    let mut list = vec![
         PaletteCommand {
             id: "toggle_activity",
             name: "Toggle Activity Panel",
@@ -95,7 +95,10 @@ pub fn default_commands() -> Vec<PaletteCommand> {
             action: AppCommand::Quit,
             shortcut: Some("Ctrl+C"),
         },
-    ]
+    ];
+
+    list.extend(crate::command::CommandRegistry::global().to_palette_commands());
+    list
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
