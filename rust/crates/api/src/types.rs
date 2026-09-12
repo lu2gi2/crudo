@@ -35,6 +35,9 @@ pub struct MessageRequest {
     /// Silently ignored by backends that do not support it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
+    /// Explicit provider-neutral thinking mode: `on`, `off`, or `auto`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_mode: Option<String>,
     /// Provider-specific OpenAI-compatible request body parameters. These are
     /// copied into the final JSON payload after core fields are populated so
     /// users can opt into gateway features such as `web_search_options`,

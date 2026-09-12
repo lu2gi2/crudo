@@ -1220,11 +1220,18 @@ fn build_chat_completion_request_for_base_url(
         payload[key] = value.clone();
     }
 
-    // DeepSeek V4 Pro/Flash thinking mode requires this provider-specific opt-in
-    // and also requires assistant reasoning history to be echoed as `reasoning_content`.
-    // Apply it after extra_body so callers cannot accidentally override the required shape.
-    if model_requires_reasoning_content_in_history(wire_model) {
+    // Preserve automatic DeepSeek thinking behavior, but allow an explicit
+    // request-level mode to override model detection.
+    if request.thinking_mode.as_deref() != Some("off")
+        && model_requires_reasoning_content_in_history(wire_model)
+    {
         payload["thinking"] = json!({"type": "enabled"});
+    }
+    match request.thinking_mode.as_deref() {
+        Some("on") => payload["thinking"] = json!({"type": "enabled"}),
+        Some("off") => payload["thinking"] = json!({"type": "disabled"}),
+        Some("auto") | None => {}
+        Some(_) => {}
     }
 
     payload
@@ -2389,6 +2396,7 @@ mod tests {
             presence_penalty: Some(0.3),
             stop: Some(vec!["\n".to_string()]),
             reasoning_effort: None,
+            thinking_mode: None,
             extra_body: BTreeMap::new(),
         };
         let payload = build_chat_completion_request(&request, OpenAiCompatConfig::openai());
