@@ -29,6 +29,27 @@ pub enum DocumentStage {
     Failed,
 }
 
+/// High-level dynamic activity state for the CRUDO agent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AgentActivity {
+    #[default]
+    Idle,
+    Thinking,
+    LookingThroughAttachment,
+    WritingCode,
+}
+
+impl AgentActivity {
+    pub fn display_label(&self) -> &'static str {
+        match self {
+            Self::Idle => "CRUDO",
+            Self::Thinking => "CRUDO IS THINKING...",
+            Self::LookingThroughAttachment => "CRUDO IS LOOKING THROUGH THE ATTACHMENT...",
+            Self::WritingCode => "WRITING THE CODE...",
+        }
+    }
+}
+
 impl fmt::Display for DocumentStage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -201,6 +222,7 @@ pub enum CrudoEvent {
 
     // Subsystem activity events (MCP, Tools, Sandbox, Models)
     AgentActivity(AgentEvent),
+    ActivityChanged(AgentActivity),
 
     // Subsystem status updates
     BackendStatusChanged(BackendConnectionStatus),
@@ -213,6 +235,7 @@ pub enum CrudoEvent {
 /// These belong to the execution/activity layer and are NEVER displayed as normal chat messages.
 #[derive(Debug, Clone)]
 pub enum AgentEvent {
+    CodingStarted,
     ModelStarted {
         model: String,
     },

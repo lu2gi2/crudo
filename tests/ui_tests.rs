@@ -258,6 +258,7 @@ fn test_document_progress_event_rendering() {
 
     let buffer = terminal.backend().buffer();
     let buffer_str: String = buffer.content().iter().map(|c| c.symbol()).collect();
+    assert!(buffer_str.contains("CRUDO IS LOOKING THROUGH THE ATTACHMENT..."));
     assert!(buffer_str.contains("Reading inspection_report.pdf"));
     assert!(buffer_str.contains("Parsing document"));
     assert!(buffer_str.contains("72%"));
@@ -1181,4 +1182,605 @@ fn test_exact_crudo_logo_and_user_message_visual() {
     assert!(found_right_border, "USER right border must be #C1ADF9");
     assert!(found_bottom_border, "USER bottom border must be #C1ADF9");
     assert!(found_white_text, "USER message text must be WHITE");
+}
+
+#[test]
+fn test_welcome_screen_initial_state() {
+    let backend = TestBackend::new(120, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut ui = UI::new("assets/crudo.png");
+    let state = AppState::new();
+
+    terminal
+        .draw(|f| {
+            ui.render(f, &state);
+        })
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let welcome_purple = ratatui::style::Color::Rgb(181, 156, 247); // #B59CF7
+    let crudo_purple = tui_crudo::ui::theme::COLOR_CRUDO_PURPLE;
+    let small_logo_purple = ratatui::style::Color::Rgb(170, 70, 255);
+    let secondary_purple = tui_crudo::ui::theme::COLOR_SECONDARY_PURPLE;
+
+    // 1. Verify small CRUDO logo is HIDDEN at top-left during welcome state
+    let mut found_small_header_logo = false;
+    for y in 2..9 {
+        for x in 2..40 {
+            let cell = &buffer[(x, y)];
+            if cell.fg == small_logo_purple {
+                found_small_header_logo = true;
+            }
+        }
+    }
+    assert!(
+        !found_small_header_logo,
+        "Small CRUDO logo in header must be hidden during welcome state"
+    );
+
+    // 2. Verify header divider line is ABSENT during welcome state
+    let mut found_header_divider = false;
+    for x in 2..buffer.area.width - 2 {
+        let cell = &buffer[(x, 10)];
+        if cell.symbol() == "─" && cell.fg == secondary_purple {
+            found_header_divider = true;
+        }
+    }
+    assert!(
+        !found_header_divider,
+        "Header divider line below top-left area must be absent during welcome state"
+    );
+
+    let mut found_welcome_text = false;
+    let mut found_welcome_styled = false;
+    let mut found_logo_styled = false;
+    let mut found_header_metrics = false;
+    let mut found_input = false;
+    let mut found_status = false;
+
+    for y in 0..buffer.area.height {
+        let mut row_symbols = String::new();
+        for x in 0..buffer.area.width {
+            let cell = &buffer[(x, y)];
+            row_symbols.push_str(cell.symbol());
+
+            if cell.symbol() == "W" && cell.fg == welcome_purple {
+                found_welcome_styled = true;
+            }
+            if cell.symbol() == "█" && cell.fg == crudo_purple {
+                found_logo_styled = true;
+            }
+        }
+
+        if row_symbols.contains("WELCOME TO CRUDO. WHAT WOULD YOU LIKE TO WORK ON TODAY?") {
+            found_welcome_text = true;
+        }
+        if row_symbols.contains("TIME") || row_symbols.contains("CPU") {
+            found_header_metrics = true;
+        }
+        if row_symbols.contains("Type a message") {
+            found_input = true;
+        }
+        if row_symbols.contains("MODEL:") && row_symbols.contains("NET: OFF") {
+            found_status = true;
+        }
+    }
+
+    let cursor = terminal.get_cursor_position().unwrap();
+    assert_eq!(
+        cursor.x, 4,
+        "Cursor must be at column 4 (start of input box inner area with margin 2 and border 1)"
+    );
+    assert!(cursor.y >= 30, "Cursor Y must be in the bottom input area");
+
+    assert!(found_welcome_text, "Welcome message text must be present");
+    assert!(
+        found_welcome_styled,
+        "Welcome message must be styled in #B59CF7"
+    );
+    assert!(
+        found_logo_styled,
+        "Big CRUDO logo must be styled in COLOR_CRUDO_PURPLE"
+    );
+    assert!(
+        found_header_metrics,
+        "Header system metrics (TIME/CPU) must remain visible"
+    );
+    assert!(found_input, "Input box must be present");
+    assert!(found_status, "Status bar must be present");
+}
+
+#[test]
+fn test_welcome_screen_transition_to_chat_and_back() {
+    let backend = TestBackend::new(120, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut ui = UI::new("assets/crudo.png");
+    let mut state = AppState::new();
+    let small_logo_purple = ratatui::style::Color::Rgb(170, 70, 255);
+
+    // 1. Initial empty state -> welcome screen active, small header logo hidden
+    terminal.draw(|f| ui.render(f, &state)).unwrap();
+    let buffer = terminal.backend().buffer();
+
+    let mut has_welcome = false;
+    for y in 0..buffer.area.height {
+        let mut row = String::new();
+        for x in 0..buffer.area.width {
+            row.push_str(buffer[(x, y)].symbol());
+        }
+        if row.contains("WELCOME TO CRUDO") {
+            has_welcome = true;
+            break;
+        }
+    }
+    assert!(has_welcome, "Welcome screen must be visible when empty");
+
+    let mut found_small_in_welcome = false;
+    for y in 2..9 {
+        for x in 2..40 {
+            if buffer[(x, y)].fg == small_logo_purple {
+                found_small_in_welcome = true;
+            }
+        }
+    }
+    assert!(
+        !found_small_in_welcome,
+        "Small logo must be hidden during welcome state"
+    );
+
+    // 2. User submits a message -> transition to ChatWidget, restore small header logo
+    state
+        .conversation
+        .add_message(ConversationMessage::new_user(
+            "Design a pipeline for crude distillation.".to_string(),
+            Vec::new(),
+        ));
+    terminal.draw(|f| ui.render(f, &state)).unwrap();
+    let buffer_chat = terminal.backend().buffer();
+
+    let mut has_welcome_after_msg = false;
+    let mut has_user_msg = false;
+    for y in 0..buffer_chat.area.height {
+        let mut row = String::new();
+        for x in 0..buffer_chat.area.width {
+            row.push_str(buffer_chat[(x, y)].symbol());
+        }
+        if row.contains("WELCOME TO CRUDO") {
+            has_welcome_after_msg = true;
+        }
+        if row.contains("Design a pipeline for crude distillation.") {
+            has_user_msg = true;
+        }
+    }
+    assert!(
+        !has_welcome_after_msg,
+        "Welcome screen must disappear after message submitted"
+    );
+    assert!(has_user_msg, "Chat message must be visible in workspace");
+
+    let secondary_purple = tui_crudo::ui::theme::COLOR_SECONDARY_PURPLE;
+    let mut found_small_in_chat = false;
+    let mut found_divider_in_chat = false;
+    for y in 2..9 {
+        for x in 2..40 {
+            if buffer_chat[(x, y)].fg == small_logo_purple {
+                found_small_in_chat = true;
+            }
+        }
+    }
+    for x in 2..buffer_chat.area.width - 2 {
+        if buffer_chat[(x, 10)].symbol() == "─" && buffer_chat[(x, 10)].fg == secondary_purple {
+            found_divider_in_chat = true;
+        }
+    }
+    assert!(
+        found_small_in_chat,
+        "Small CRUDO logo must be restored at top-left during chat"
+    );
+    assert!(
+        found_divider_in_chat,
+        "Header divider line must be restored during chat"
+    );
+
+    // 3. Clear conversation (e.g. /clear) -> welcome screen reappears, small logo hidden again
+    state.conversation.messages.clear();
+    terminal.draw(|f| ui.render(f, &state)).unwrap();
+    let buffer_cleared = terminal.backend().buffer();
+
+    let mut has_welcome_reappeared = false;
+    for y in 0..buffer_cleared.area.height {
+        let mut row = String::new();
+        for x in 0..buffer_cleared.area.width {
+            row.push_str(buffer_cleared[(x, y)].symbol());
+        }
+        if row.contains("WELCOME TO CRUDO") {
+            has_welcome_reappeared = true;
+            break;
+        }
+    }
+    assert!(
+        has_welcome_reappeared,
+        "Welcome screen must reappear after conversation is cleared"
+    );
+
+    let mut found_small_after_clear = false;
+    let mut found_divider_after_clear = false;
+    for y in 2..9 {
+        for x in 2..40 {
+            if buffer_cleared[(x, y)].fg == small_logo_purple {
+                found_small_after_clear = true;
+            }
+        }
+    }
+    for x in 2..buffer_cleared.area.width - 2 {
+        if buffer_cleared[(x, 10)].symbol() == "─" && buffer_cleared[(x, 10)].fg == secondary_purple
+        {
+            found_divider_after_clear = true;
+        }
+    }
+    assert!(
+        !found_small_after_clear,
+        "Small logo must be hidden again when returning to welcome state"
+    );
+    assert!(
+        !found_divider_after_clear,
+        "Header divider must be hidden again when returning to welcome state"
+    );
+}
+
+#[test]
+fn test_welcome_screen_multiple_resolutions_rendering() {
+    let sizes = [
+        (120, 40),
+        (160, 50),
+        (200, 60),
+        (80, 24),
+        (60, 24),
+        (180, 16),
+    ];
+
+    for (w, h) in sizes {
+        let backend = TestBackend::new(w, h);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut ui = UI::new("assets/crudo.png");
+        let state = AppState::new();
+
+        terminal.draw(|f| ui.render(f, &state)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let mut found_welcome = false;
+        for y in 0..buffer.area.height {
+            let mut row = String::new();
+            for x in 0..buffer.area.width {
+                row.push_str(buffer[(x, y)].symbol());
+            }
+            if row.contains("WELCOME TO CRUDO") {
+                found_welcome = true;
+                break;
+            }
+        }
+        assert!(
+            found_welcome,
+            "Welcome message must be rendered at resolution {w}x{h}"
+        );
+    }
+}
+
+#[test]
+fn test_welcome_visual_layout_and_margins() {
+    let backend = TestBackend::new(120, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut ui = UI::new("assets/crudo.png");
+    let state = AppState::new();
+
+    terminal.draw(|f| ui.render(f, &state)).unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let mut logo_first_row = None;
+    let mut logo_last_row = None;
+    let mut msg_row = None;
+
+    // Central workspace is y: 11..34 (height 23)
+    for y in 11..34 {
+        let mut row = String::new();
+        for x in 0..buffer.area.width {
+            row.push_str(buffer[(x, y)].symbol());
+        }
+        // First line of CRUDO_LOGO has "███"
+        if row.contains("███") {
+            if logo_first_row.is_none() {
+                logo_first_row = Some(y);
+            }
+            logo_last_row = Some(y);
+        }
+        if row.contains("WELCOME TO CRUDO") {
+            msg_row = Some(y);
+        }
+    }
+
+    assert!(
+        logo_first_row.is_some(),
+        "Central logo first row must be found"
+    );
+    assert!(
+        logo_last_row.is_some(),
+        "Central logo last row must be found"
+    );
+    assert!(msg_row.is_some(), "Welcome message row must be found");
+
+    let first = logo_first_row.unwrap();
+    let last = logo_last_row.unwrap();
+    let msg = msg_row.unwrap();
+
+    // At 120x40, workspace height is 23:
+    // Logo is 20 rows (11..31), so first is 11, last is 30
+    assert_eq!(first, 11, "Logo starts at top of central workspace");
+    assert_eq!(last, 30, "Logo has exactly 20 lines (11..=30)");
+    // Two blank lines before welcome message: rows 31 and 32 are blank
+    assert_eq!(
+        msg, 33,
+        "Welcome message is at row 33 (2 blank lines after row 30)"
+    );
+
+    // Also verify 200x60 centering
+    let backend_200 = TestBackend::new(200, 60);
+    let mut term_200 = Terminal::new(backend_200).unwrap();
+    let mut ui_200 = UI::new("assets/crudo.png");
+    term_200.draw(|f| ui_200.render(f, &state)).unwrap();
+    let buf_200 = term_200.backend().buffer();
+
+    // At 200x60, central workspace is height 43 (y: 11..54).
+    // top_padding = (43 - 23) / 2 = 10. Logo starts at y = 11 + 10 = 21.
+    let mut logo_200_first = None;
+    let mut msg_200_row = None;
+    for y in 11..54 {
+        let mut row = String::new();
+        for x in 0..buf_200.area.width {
+            row.push_str(buf_200[(x, y)].symbol());
+        }
+        if row.contains("███") && logo_200_first.is_none() {
+            logo_200_first = Some(y);
+        }
+        if row.contains("WELCOME TO CRUDO") {
+            msg_200_row = Some(y);
+        }
+    }
+
+    assert_eq!(
+        logo_200_first,
+        Some(21),
+        "At 200x60, logo starts at row 21 (10 lines breathing space)"
+    );
+    assert_eq!(
+        msg_200_row,
+        Some(43),
+        "At 200x60, welcome message is at row 43 (2 blank lines after row 40)"
+    );
+}
+
+#[test]
+fn test_agent_activity_general_thinking_and_idle() {
+    let backend = TestBackend::new(100, 30);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut ui = UI::new("assets/crudo.png");
+    let mut state = AppState::new();
+
+    // User asks general question
+    state
+        .conversation
+        .add_message(ConversationMessage::new_user(
+            "What is atmospheric distillation?".to_string(),
+            Vec::new(),
+        ));
+    state.conversation.activity = tui_crudo::events::AgentActivity::Thinking;
+
+    // 1. Render in Thinking state
+    terminal.draw(|f| ui.render(f, &state)).unwrap();
+    let buf = terminal.backend().buffer();
+    let buf_str: String = buf.content().iter().map(|c| c.symbol()).collect();
+    assert!(
+        buf_str.contains("CRUDO IS THINKING..."),
+        "General question during reasoning must show CRUDO IS THINKING..."
+    );
+
+    // 2. Response arrives and completes -> Idle state
+    state.conversation.activity = tui_crudo::events::AgentActivity::Idle;
+    state
+        .conversation
+        .add_message(ConversationMessage::new_crudo(
+            "Atmospheric distillation operates at nominal atmospheric pressures.".to_string(),
+        ));
+
+    terminal.draw(|f| ui.render(f, &state)).unwrap();
+    let buf2 = terminal.backend().buffer();
+    let buf2_str: String = buf2.content().iter().map(|c| c.symbol()).collect();
+    assert!(
+        !buf2_str.contains("CRUDO IS THINKING..."),
+        "Thinking label must disappear once response completes"
+    );
+    assert!(
+        buf2_str.contains("CRUDO"),
+        "Standard CRUDO header must appear for completed response"
+    );
+}
+
+#[test]
+fn test_agent_activity_coding_two_phases() {
+    let mut app = tui_crudo::App::new(None, "assets/crudo.png");
+
+    // Phase 1: User asks coding question
+    app.state
+        .input
+        .insert_str("Write a Python program that calculates valve Cv");
+    let rt = tokio::runtime::Runtime::new().unwrap();
+
+    // User submits prompt
+    rt.block_on(async {
+        let trimmed = app.state.input.submit();
+        app.state
+            .conversation
+            .add_message(ConversationMessage::new_user(trimmed.clone(), Vec::new()));
+        assert!(tui_crudo::app::is_coding_request(&trimmed));
+        app.state.conversation.is_coding_task = true;
+        app.state.conversation.activity = tui_crudo::events::AgentActivity::Thinking;
+    });
+
+    let backend = TestBackend::new(100, 30);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    // Verify Phase 1: CRUDO IS THINKING...
+    terminal.draw(|f| app.ui.render(f, &app.state)).unwrap();
+    let buf1 = terminal.backend().buffer();
+    let str1: String = buf1.content().iter().map(|c| c.symbol()).collect();
+    assert!(
+        str1.contains("CRUDO IS THINKING..."),
+        "Coding request must initially show CRUDO IS THINKING..."
+    );
+    assert!(
+        !str1.contains("WRITING THE CODE..."),
+        "Coding request must NOT show WRITING THE CODE... during thinking phase"
+    );
+
+    // Phase 2: Coding generation begins
+    app.handle_backend_event(tui_crudo::events::CrudoEvent::AgentActivity(
+        tui_crudo::events::AgentEvent::CodingStarted,
+    ));
+    assert_eq!(
+        app.state.conversation.activity,
+        tui_crudo::events::AgentActivity::WritingCode
+    );
+
+    // Verify Phase 2: WRITING THE CODE...
+    terminal.draw(|f| app.ui.render(f, &app.state)).unwrap();
+    let buf2 = terminal.backend().buffer();
+    let str2: String = buf2.content().iter().map(|c| c.symbol()).collect();
+    assert!(
+        str2.contains("WRITING THE CODE..."),
+        "Coding generation must show WRITING THE CODE..."
+    );
+    assert!(
+        !str2.contains("CRUDO IS THINKING..."),
+        "Thinking phrase must be replaced by WRITING THE CODE..."
+    );
+
+    // Complete the code generation
+    app.handle_backend_event(tui_crudo::events::CrudoEvent::MessageCreated {
+        role: tui_crudo::events::Actor::Crudo,
+        content: "```python\ndef valve_cv(q, dp, sg):\n    return q * (sg / dp) ** 0.5\n```"
+            .to_string(),
+        timestamp: chrono::Local::now(),
+    });
+    assert_eq!(
+        app.state.conversation.activity,
+        tui_crudo::events::AgentActivity::Idle
+    );
+    assert!(!app.state.conversation.is_coding_task);
+
+    // Verify Idle: normal CRUDO
+    terminal.draw(|f| app.ui.render(f, &app.state)).unwrap();
+    let buf3 = terminal.backend().buffer();
+    let str3: String = buf3.content().iter().map(|c| c.symbol()).collect();
+    assert!(
+        !str3.contains("WRITING THE CODE..."),
+        "WRITING THE CODE... must not appear once completed"
+    );
+}
+
+#[test]
+fn test_agent_activity_document_processing_and_followup() {
+    let mut app = tui_crudo::App::new(None, "assets/crudo.png");
+    let backend = TestBackend::new(100, 30);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    // 1. Document Started
+    app.handle_backend_event(tui_crudo::events::CrudoEvent::DocumentStarted {
+        document_id: "doc_10".to_string(),
+        filename: "piping_spec.pdf".to_string(),
+    });
+    assert_eq!(
+        app.state.conversation.activity,
+        tui_crudo::events::AgentActivity::LookingThroughAttachment
+    );
+
+    terminal.draw(|f| app.ui.render(f, &app.state)).unwrap();
+    let buf1 = terminal.backend().buffer();
+    let str1: String = buf1.content().iter().map(|c| c.symbol()).collect();
+    assert!(str1.contains("CRUDO IS LOOKING THROUGH THE ATTACHMENT..."));
+    assert!(str1.contains("Reading piping_spec.pdf"));
+
+    // 2. Document Completed -> transitions to Thinking
+    app.handle_backend_event(tui_crudo::events::CrudoEvent::DocumentCompleted {
+        document_id: "doc_10".to_string(),
+        filename: "piping_spec.pdf".to_string(),
+    });
+    assert_eq!(
+        app.state.conversation.activity,
+        tui_crudo::events::AgentActivity::Thinking
+    );
+
+    // 3. Response arrives
+    app.handle_backend_event(tui_crudo::events::CrudoEvent::MessageCreated {
+        role: tui_crudo::events::Actor::Crudo,
+        content: "Document parsed. What would you like to know?".to_string(),
+        timestamp: chrono::Local::now(),
+    });
+    assert_eq!(
+        app.state.conversation.activity,
+        tui_crudo::events::AgentActivity::Idle
+    );
+
+    // 4. User asks a follow-up question about the analyzed document
+    app.state
+        .conversation
+        .add_message(ConversationMessage::new_user(
+            "What is the maximum design pressure in section 3?".to_string(),
+            Vec::new(),
+        ));
+    app.state.conversation.activity = tui_crudo::events::AgentActivity::Thinking;
+
+    terminal.draw(|f| app.ui.render(f, &app.state)).unwrap();
+    let buf2 = terminal.backend().buffer();
+    let str2: String = buf2.content().iter().map(|c| c.symbol()).collect();
+    assert!(
+        str2.contains("CRUDO IS THINKING..."),
+        "Follow-up question after document analysis must show CRUDO IS THINKING..."
+    );
+    assert!(
+        !str2.contains("CRUDO IS LOOKING THROUGH THE ATTACHMENT..."),
+        "Follow-up question must NOT show LOOKING THROUGH ATTACHMENT"
+    );
+}
+
+#[test]
+fn test_chat_history_does_not_contain_activity_labels() {
+    let mut app = tui_crudo::App::new(None, "assets/crudo.png");
+    app.state
+        .conversation
+        .add_message(ConversationMessage::new_user(
+            "Write a Python script to monitor pumps.".to_string(),
+            Vec::new(),
+        ));
+    app.state.conversation.activity = tui_crudo::events::AgentActivity::WritingCode;
+
+    app.handle_backend_event(tui_crudo::events::CrudoEvent::MessageCreated {
+        role: tui_crudo::events::Actor::Crudo,
+        content: "print('Monitoring pumps')".to_string(),
+        timestamp: chrono::Local::now(),
+    });
+
+    for msg in &app.state.conversation.messages {
+        assert!(
+            !msg.content.contains("CRUDO IS THINKING..."),
+            "Chat message history content must NEVER contain activity label"
+        );
+        assert!(
+            !msg.content.contains("WRITING THE CODE..."),
+            "Chat message history content must NEVER contain activity label"
+        );
+        assert!(
+            !msg.content
+                .contains("CRUDO IS LOOKING THROUGH THE ATTACHMENT..."),
+            "Chat message history content must NEVER contain activity label"
+        );
+    }
 }

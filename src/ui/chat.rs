@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
-use crate::events::Actor;
+use crate::events::{Actor, AgentActivity};
 use crate::state::{AppState, ConversationMessage};
 use crate::ui::progress::render_progress_bar;
 use crate::ui::theme::{
@@ -35,6 +35,7 @@ impl ChatWidget {
         let lines = Self::build_chat_lines(
             &state.conversation.messages,
             state.conversation.active_document.as_ref(),
+            state.conversation.activity,
             inner_area.width as usize,
         );
 
@@ -80,6 +81,7 @@ impl ChatWidget {
     pub fn build_chat_lines(
         messages: &[ConversationMessage],
         active_document: Option<&crate::state::DocumentProgressState>,
+        activity: AgentActivity,
         inner_width: usize,
     ) -> Vec<Line<'static>> {
         let mut lines: Vec<Line<'static>> = Vec::new();
@@ -95,13 +97,19 @@ impl ChatWidget {
         lines.push(Line::raw(""));
 
         // Render Conversation Messages
-        for msg in messages {
+        for (i, msg) in messages.iter().enumerate() {
+            let is_last = i == messages.len() - 1;
             match msg.role {
                 Actor::User => {
                     Self::render_user_message(&mut lines, msg, box_width, content_width);
                 }
                 Actor::Crudo => {
-                    Self::render_crudo_message(&mut lines, msg, box_width);
+                    let msg_activity = if is_last && msg.is_streaming {
+                        activity
+                    } else {
+                        AgentActivity::Idle
+                    };
+                    Self::render_crudo_message(&mut lines, msg, box_width, msg_activity);
                 }
             }
             // Vertical breathing room between messages
@@ -113,6 +121,19 @@ impl ChatWidget {
         if let Some(doc) = active_document {
             Self::render_document_progress(&mut lines, doc);
             lines.push(Line::raw(""));
+        } else if activity != AgentActivity::Idle {
+            let last_is_streaming_crudo = messages
+                .last()
+                .is_some_and(|m| m.role == Actor::Crudo && m.is_streaming);
+            if !last_is_streaming_crudo {
+                // Render standalone activity indicator for pending CRUDO reasoning/action
+                lines.push(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(format!("{GLYPH_CRUDO_GEAR} "), Theme::crudo_marker()),
+                    Span::styled(activity.display_label(), Theme::crudo_marker()),
+                ]));
+                lines.push(Line::raw(""));
+            }
         }
 
         lines
@@ -188,12 +209,19 @@ impl ChatWidget {
         lines: &mut Vec<Line<'static>>,
         msg: &ConversationMessage,
         box_width: usize,
+        activity: AgentActivity,
     ) {
-        // Line 1: ⚙ CRUDO
+        let label = if activity != AgentActivity::Idle {
+            activity.display_label()
+        } else {
+            "CRUDO"
+        };
+
+        // Line 1: ⚙ CRUDO (or dynamic activity label)
         lines.push(Line::from(vec![
             Span::raw("  "),
             Span::styled(format!("{GLYPH_CRUDO_GEAR} "), Theme::crudo_marker()),
-            Span::styled("CRUDO", Theme::crudo_marker()),
+            Span::styled(label, Theme::crudo_marker()),
         ]));
 
         lines.push(Line::raw(""));
@@ -225,7 +253,10 @@ impl ChatWidget {
         lines.push(Line::from(vec![
             Span::raw("  "),
             Span::styled(format!("{GLYPH_CRUDO_GEAR} "), Theme::crudo_marker()),
-            Span::styled("CRUDO", Theme::crudo_marker()),
+            Span::styled(
+                "CRUDO IS LOOKING THROUGH THE ATTACHMENT...",
+                Theme::crudo_marker(),
+            ),
         ]));
 
         lines.push(Line::raw(""));

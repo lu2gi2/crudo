@@ -8,7 +8,7 @@ use crate::attachments::Attachment;
 use crate::backend::{DisconnectedBackend, SharedBackend};
 use crate::commands::SlashCommand;
 use crate::event::{AppEvent, EventHandler};
-use crate::events::{AgentEvent, CrudoEvent};
+use crate::events::{Actor, AgentActivity, AgentEvent, CrudoEvent};
 use crate::state::{AppState, ConversationMessage, DocumentProgressState};
 use crate::ui::UI;
 
@@ -343,6 +343,18 @@ impl App {
                 pending_attachments.clone(),
             ));
 
+        // State transition upon submission:
+        if !pending_attachments.is_empty() {
+            self.state.conversation.activity = AgentActivity::LookingThroughAttachment;
+            self.state.conversation.is_coding_task = false;
+        } else if is_coding_request(trimmed) {
+            self.state.conversation.is_coding_task = true;
+            self.state.conversation.activity = AgentActivity::Thinking;
+        } else {
+            self.state.conversation.is_coding_task = false;
+            self.state.conversation.activity = AgentActivity::Thinking;
+        }
+
         // Dispatch to backend
         match self
             .backend
@@ -353,12 +365,16 @@ impl App {
                 // Backend accepted prompt; will stream or send CrudoEvent responses
             }
             Err(crate::backend::BackendError::NotConnected) => {
+                self.state.conversation.activity = AgentActivity::Idle;
+                self.state.conversation.is_coding_task = false;
                 // Truthful message when backend is not connected
                 self.state.conversation.add_message(ConversationMessage::new_crudo(
                     "CRUDO backend is not connected. Connect a backend service or configure an endpoint to process requests.".to_string(),
                 ));
             }
             Err(e) => {
+                self.state.conversation.activity = AgentActivity::Idle;
+                self.state.conversation.is_coding_task = false;
                 self.state
                     .conversation
                     .add_message(ConversationMessage::new_crudo(format!(
@@ -370,25 +386,36 @@ impl App {
 
     pub fn handle_backend_event(&mut self, event: CrudoEvent) {
         match event {
+            CrudoEvent::ActivityChanged(activity) => {
+                self.state.conversation.activity = activity;
+            }
             CrudoEvent::MessageCreated {
                 role,
                 content,
                 timestamp: _,
             } => {
                 let msg = match role {
-                    crate::events::Actor::User => {
-                        ConversationMessage::new_user(content, Vec::new())
+                    Actor::User => ConversationMessage::new_user(content, Vec::new()),
+                    Actor::Crudo => {
+                        self.state.conversation.activity = AgentActivity::Idle;
+                        self.state.conversation.is_coding_task = false;
+                        ConversationMessage::new_crudo(content)
                     }
-                    crate::events::Actor::Crudo => ConversationMessage::new_crudo(content),
                 };
                 self.state.conversation.add_message(msg);
             }
             CrudoEvent::ResponseStarted { message_id } => {
+                if self.state.conversation.is_coding_task {
+                    self.state.conversation.activity = AgentActivity::WritingCode;
+                }
                 self.state
                     .conversation
                     .add_message(ConversationMessage::new_streaming(message_id));
             }
             CrudoEvent::ResponseDelta { message_id, delta } => {
+                if self.state.conversation.is_coding_task {
+                    self.state.conversation.activity = AgentActivity::WritingCode;
+                }
                 if let Some(msg) = self
                     .state
                     .conversation
@@ -400,6 +427,8 @@ impl App {
                 }
             }
             CrudoEvent::ResponseCompleted { message_id } => {
+                self.state.conversation.activity = AgentActivity::Idle;
+                self.state.conversation.is_coding_task = false;
                 if let Some(msg) = self
                     .state
                     .conversation
@@ -411,6 +440,8 @@ impl App {
                 }
             }
             CrudoEvent::ResponseFailed { message_id, error } => {
+                self.state.conversation.activity = AgentActivity::Idle;
+                self.state.conversation.is_coding_task = false;
                 if let Some(msg) = self
                     .state
                     .conversation
@@ -426,6 +457,7 @@ impl App {
                 document_id,
                 filename,
             } => {
+                self.state.conversation.activity = AgentActivity::LookingThroughAttachment;
                 self.state.conversation.active_document =
                     Some(DocumentProgressState::new(document_id, filename.clone()));
                 self.state
@@ -439,6 +471,7 @@ impl App {
                 total,
                 percentage,
             } => {
+                self.state.conversation.activity = AgentActivity::LookingThroughAttachment;
                 if let Some(ref mut doc) = self.state.conversation.active_document {
                     doc.stage = stage;
                     doc.current = current;
@@ -451,6 +484,8 @@ impl App {
                 filename,
             } => {
                 self.state.conversation.active_document = None;
+                // Transition to Thinking state as per Section 14 & 15:
+                self.state.conversation.activity = AgentActivity::Thinking;
                 self.state
                     .log_activity("DOC", format!("Parsed {filename}"), "COMPLETED", None);
             }
@@ -460,6 +495,7 @@ impl App {
                 error,
             } => {
                 self.state.conversation.active_document = None;
+                self.state.conversation.activity = AgentActivity::Idle;
                 self.state.log_activity(
                     "DOC",
                     format!("Parsing failed {filename}"),
@@ -471,6 +507,7 @@ impl App {
                 image_id: _,
                 filename,
             } => {
+                self.state.conversation.activity = AgentActivity::LookingThroughAttachment;
                 self.state.log_activity(
                     "VISION",
                     format!("Processing {filename}"),
@@ -484,6 +521,7 @@ impl App {
                 stage,
                 percentage,
             } => {
+                self.state.conversation.activity = AgentActivity::LookingThroughAttachment;
                 self.state.log_activity(
                     "VISION",
                     format!("{filename}: {stage} ({percentage}%)"),
@@ -495,6 +533,7 @@ impl App {
                 image_id: _,
                 filename,
             } => {
+                self.state.conversation.activity = AgentActivity::Thinking;
                 self.state.log_activity(
                     "VISION",
                     format!("Inspected {filename}"),
@@ -507,6 +546,7 @@ impl App {
                 filename,
                 error,
             } => {
+                self.state.conversation.activity = AgentActivity::Idle;
                 self.state.log_activity(
                     "VISION",
                     format!("Failed {filename}"),
@@ -515,7 +555,17 @@ impl App {
                 );
             }
             CrudoEvent::AgentActivity(agent_event) => match agent_event {
+                AgentEvent::CodingStarted => {
+                    self.state.conversation.activity = AgentActivity::WritingCode;
+                    self.state
+                        .log_activity("CODE", "Generating code".to_string(), "RUNNING", None);
+                }
                 AgentEvent::ModelStarted { model } => {
+                    if !self.state.conversation.is_coding_task
+                        || self.state.conversation.activity == AgentActivity::Idle
+                    {
+                        self.state.conversation.activity = AgentActivity::Thinking;
+                    }
                     self.state.log_activity(
                         "MODEL",
                         format!("Reasoning with {model}"),
@@ -540,6 +590,7 @@ impl App {
                     );
                 }
                 AgentEvent::ModelFailed { model, error } => {
+                    self.state.conversation.activity = AgentActivity::Idle;
                     self.state.log_activity(
                         "MODEL",
                         format!("Failed {model}"),
@@ -576,6 +627,12 @@ impl App {
                     );
                 }
                 AgentEvent::ToolStarted { tool_name } => {
+                    if self.state.conversation.is_coding_task
+                        || tool_name.contains("code")
+                        || tool_name.contains("writer")
+                    {
+                        self.state.conversation.activity = AgentActivity::WritingCode;
+                    }
                     self.state.log_activity("TOOL", tool_name, "RUNNING", None);
                 }
                 AgentEvent::ToolProgress { tool_name, stage } => {
@@ -591,6 +648,9 @@ impl App {
                         .log_activity("TOOL", tool_name, "FAILED", Some(error));
                 }
                 AgentEvent::SandboxStarted { task_id } => {
+                    if self.state.conversation.is_coding_task {
+                        self.state.conversation.activity = AgentActivity::WritingCode;
+                    }
                     self.state
                         .log_activity("SANDBOX", format!("Task {task_id}"), "RUNNING", None);
                 }
@@ -639,5 +699,80 @@ impl App {
                 self.state.backend.sandbox = status;
             }
         }
+    }
+}
+
+/// Determines if a user prompt is requesting code generation or implementation.
+pub fn is_coding_request(prompt: &str) -> bool {
+    let lower = prompt.to_lowercase();
+    let lower_trim = lower.trim();
+
+    if lower_trim.starts_with("def ")
+        || lower_trim.starts_with("fn ")
+        || lower_trim.starts_with("class ")
+    {
+        return true;
+    }
+
+    let code_terms = [
+        "code",
+        "program",
+        "script",
+        "function",
+        "algorithm",
+        "python",
+        "rust",
+        "c++",
+        "javascript",
+        "bash",
+        "class",
+        "method",
+        "module",
+        "sql",
+    ];
+
+    let action_terms = [
+        "write",
+        "implement",
+        "code",
+        "generate",
+        "create",
+        "build",
+        "develop",
+        "draft",
+    ];
+
+    for action in action_terms {
+        if lower.contains(action) {
+            for term in code_terms {
+                if lower.contains(term) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    lower.contains("coding") || lower.contains("write code") || lower.contains("implement")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_coding_request_detection() {
+        assert!(is_coding_request(
+            "Write a Python program that calculates fibonacci"
+        ));
+        assert!(is_coding_request("Write code for a quicksort function"));
+        assert!(is_coding_request("Implement a thread-safe cache in Rust"));
+        assert!(is_coding_request(
+            "Can you write a script to process sensor logs?"
+        ));
+        assert!(is_coding_request("def calculate_pressure(p, v):"));
+
+        assert!(!is_coding_request("What is a P&ID?"));
+        assert!(!is_coding_request("Explain distillation columns."));
+        assert!(!is_coding_request("Hello CRUDO!"));
     }
 }

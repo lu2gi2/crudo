@@ -11,6 +11,6 @@ pub mod system;
 pub mod ui;
 
 pub use app::App;
-pub use backend::{CrudoBackend, DisconnectedBackend, SharedBackend};
-pub use events::{Actor, CrudoEvent};
+pub use backend::{CrudoBackend, DemoBackend, DisconnectedBackend, SharedBackend};
+pub use events::{Actor, AgentActivity, CrudoEvent};
 pub use state::AppState;

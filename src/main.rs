@@ -25,7 +25,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     // Initialize CRUDO application with compiled character-based logo
-    let mut app = App::new(None, "");
+    let use_demo = std::env::args().any(|a| a == "--demo") || std::env::var("CRUDO_DEMO").is_ok();
+    let backend: Option<tui_crudo::SharedBackend> = if use_demo {
+        Some(std::sync::Arc::new(tui_crudo::DemoBackend::new()))
+    } else {
+        None
+    };
+    let mut app = App::new(backend, "");
 
     // Run main event loop
     let app_result = app.run(&mut terminal).await;

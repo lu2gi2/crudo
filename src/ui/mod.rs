@@ -6,12 +6,14 @@ pub mod input;
 pub mod progress;
 pub mod status;
 pub mod theme;
+pub mod welcome;
 
 pub use activity::ActivityWidget;
 pub use chat::ChatWidget;
 pub use header::HeaderWidget;
 pub use input::InputWidget;
 pub use status::StatusBarWidget;
+pub use welcome::WelcomeWidget;
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::Style;
@@ -24,12 +26,14 @@ use crate::ui::theme::{COLOR_BLACK, COLOR_SECONDARY_PURPLE, COLOR_WHITE};
 
 pub struct UI {
     pub header: HeaderWidget,
+    pub welcome: WelcomeWidget,
 }
 
 impl UI {
     pub fn new(logo_path: &str) -> Self {
         Self {
             header: HeaderWidget::new(logo_path),
+            welcome: WelcomeWidget::new(),
         }
     }
 
@@ -136,7 +140,12 @@ impl UI {
 
         // Render Components
         self.header.render(frame, header_rect, state);
-        ChatWidget::render(frame, chat_rect, state);
+
+        if state.is_welcome() {
+            self.welcome.render(frame, chat_rect, state);
+        } else {
+            ChatWidget::render(frame, chat_rect, state);
+        }
 
         if let Some(d_rect) = drawer_rect {
             ActivityWidget::render(frame, d_rect, state);

@@ -2,7 +2,8 @@ use chrono::{DateTime, Local};
 
 use crate::attachments::{Attachment, AttachmentState};
 use crate::events::{
-    Actor, BackendConnectionStatus, DocumentStage, McpStatus, ModelStatus, SandboxStatus,
+    Actor, AgentActivity, BackendConnectionStatus, DocumentStage, McpStatus, ModelStatus,
+    SandboxStatus,
 };
 use crate::input::InputState;
 use crate::system::SystemMetrics;
@@ -97,6 +98,8 @@ pub struct ConversationState {
     pub scroll_offset: usize,
     pub auto_scroll: bool,
     pub active_document: Option<DocumentProgressState>,
+    pub activity: AgentActivity,
+    pub is_coding_task: bool,
     pub content_height: std::cell::Cell<usize>,
     pub viewport_height: std::cell::Cell<usize>,
     pub last_viewport_height: std::cell::Cell<usize>,
@@ -110,11 +113,17 @@ impl ConversationState {
             scroll_offset: 0,
             auto_scroll: true,
             active_document: None,
+            activity: AgentActivity::Idle,
+            is_coding_task: false,
             content_height: std::cell::Cell::new(0),
             viewport_height: std::cell::Cell::new(10),
             last_viewport_height: std::cell::Cell::new(10),
             last_total_rows: std::cell::Cell::new(0),
         }
+    }
+
+    pub fn is_welcome(&self) -> bool {
+        self.messages.is_empty() && self.active_document.is_none()
     }
 
     pub fn max_scroll(&self) -> usize {
@@ -158,6 +167,8 @@ impl ConversationState {
         self.scroll_offset = 0;
         self.auto_scroll = true;
         self.active_document = None;
+        self.activity = AgentActivity::Idle;
+        self.is_coding_task = false;
         self.content_height.set(0);
         self.last_total_rows.set(0);
     }
@@ -259,6 +270,10 @@ impl AppState {
             should_quit: false,
             show_activity_drawer: false,
         }
+    }
+
+    pub fn is_welcome(&self) -> bool {
+        self.conversation.is_welcome()
     }
 
     pub fn log_activity(

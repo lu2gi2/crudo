@@ -15,9 +15,8 @@ use crate::ui::theme::{Theme, COLOR_BLACK, COLOR_SECONDARY_PURPLE};
 
 const CRUDO_LOGO: &[&str] = &[
     r#"    ▄▄█ ▄"#,
-    r#"   █▀▀▀"#,
-    r#"  ▄█▄              ▄▄▄▄▄▄▄   ▄▄▄▄▄▄▄▄▄    ▄▄▄    ▄▄▄  ▄▄▄▄▄▄▄▄▄        ███"#,
-    r#"  ███ ▄▄  ▄  ▄   ████▀▀▀████ ████   ▀███  ███    ███  ███▄ ▀▀████   ███▀▀▀████"#,
+    r#"   ▄▀▀▀            ▄▄▄▄▄▄▄   ▄▄▄▄▄▄▄▄▄    ▄▄▄    ▄▄▄  ▄▄▄▄▄▄▄▄▄        ███"#,
+    r#"  ▄█▄  ▄  ▄  ▄   ████▀▀▀████ ████   ▀███  ███    ███  ███▄ ▀▀████   ███▀▀▀████"#,
     r#"  ██████▄██▄██   ████     ▀▀ ████▄▄▄▄██▀  ███    ███  ███    ████ ████     ▀████"#,
     r#"  ██▀▄▀███▀▄▀██  ████        █████████▀   ███    ███  ███    ████ ▀███     ▄██▀█"#,
     r#" ██▄▀█ ██▄▀█▀██  ████   ▄██▄ ████ ▀███▄   ███▄  ▄███  ███▄   ████   ████▄▄████"#,
@@ -51,10 +50,16 @@ impl HeaderWidget {
             return;
         }
 
-        let block = Block::default()
-            .borders(Borders::BOTTOM)
-            .border_style(Style::default().fg(COLOR_SECONDARY_PURPLE))
-            .style(Style::default().bg(COLOR_BLACK));
+        let is_welcome = state.is_welcome();
+
+        let block = if is_welcome {
+            Block::default().style(Style::default().bg(COLOR_BLACK))
+        } else {
+            Block::default()
+                .borders(Borders::BOTTOM)
+                .border_style(Style::default().fg(COLOR_SECONDARY_PURPLE))
+                .style(Style::default().bg(COLOR_BLACK))
+        };
 
         let inner_area = block.inner(area);
         frame.render_widget(block, area);
@@ -85,9 +90,11 @@ impl HeaderWidget {
         let logo_area = cols[0];
         let clock_area = cols[1];
 
-        // 1. Render character-based CRUDO logo directly through Ratatui
-        let logo_widget = crudo_logo();
-        frame.render_widget(logo_widget, logo_area);
+        // 1. Render character-based CRUDO logo directly through Ratatui only during chat/workbench
+        if !is_welcome {
+            let logo_widget = crudo_logo();
+            frame.render_widget(logo_widget, logo_area);
+        }
 
         // 2. Render System Information (TIME, DATE, CPU, GPU) in Top-Right
         let time_str = current_system_time();
