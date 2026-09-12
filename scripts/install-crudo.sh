@@ -23,7 +23,6 @@ PROVIDER="${CRUDO_SETUP_PROVIDER:-}"
 ENDPOINT="${CRUDO_SETUP_ENDPOINT:-}"
 API_KEY="${CRUDO_SETUP_API_KEY:-}"
 MODEL="${CRUDO_SETUP_MODEL:-}"
-THINKING="${CRUDO_SETUP_THINKING:-auto}"
 LOCAL_KIND="${CRUDO_SETUP_LOCAL_KIND:-generic}"
 FORCE="${CRUDO_SETUP_FORCE:-0}"
 NON_INTERACTIVE="${CRUDO_SETUP_NONINTERACTIVE:-0}"
@@ -38,7 +37,6 @@ Options:
   --endpoint URL                  Cloud/custom/local endpoint.
   --api-key KEY                   API key (prefer CRUDO_SETUP_API_KEY in CI).
   --model MODEL                   Exact model/deployment identifier.
-  --thinking auto|on|off          Thinking mode (default: auto).
   --local-kind ollama|generic     Local server protocol (default: generic).
   --release | --debug             Build profile (default: release).
   --no-verify                     Skip --version/--help verification.
@@ -48,7 +46,7 @@ Options:
 
 Environment equivalents:
   CRUDO_SETUP_MODE, CRUDO_SETUP_PROVIDER, CRUDO_SETUP_ENDPOINT,
-  CRUDO_SETUP_API_KEY, CRUDO_SETUP_MODEL, CRUDO_SETUP_THINKING, CRUDO_SETUP_LOCAL_KIND,
+  CRUDO_SETUP_API_KEY, CRUDO_SETUP_MODEL, CRUDO_SETUP_LOCAL_KIND,
   CRUDO_BUILD_PROFILE, CRUDO_SKIP_VERIFY, CRUDO_SETUP_FORCE,
   CRUDO_SETUP_NONINTERACTIVE
 
@@ -68,7 +66,6 @@ while (($#)); do
     --endpoint) (($# >= 2)) || fail "--endpoint requires a value"; ENDPOINT="$2"; shift 2 ;;
     --api-key) (($# >= 2)) || fail "--api-key requires a value"; API_KEY="$2"; shift 2 ;;
     --model) (($# >= 2)) || fail "--model requires a value"; MODEL="$2"; shift 2 ;;
-    --thinking) (($# >= 2)) || fail "--thinking requires a value"; THINKING="$2"; shift 2 ;;
     --local-kind) (($# >= 2)) || fail "--local-kind requires a value"; LOCAL_KIND="$2"; shift 2 ;;
     --release) BUILD_PROFILE=release; shift ;;
     --debug) BUILD_PROFILE=debug; shift ;;
@@ -81,7 +78,6 @@ while (($#)); do
 done
 
 [[ "$BUILD_PROFILE" == debug || "$BUILD_PROFILE" == release ]] || fail "build profile must be debug or release"
-[[ "$THINKING" == auto || "$THINKING" == on || "$THINKING" == off ]] || fail "thinking mode must be auto, on, or off"
 [[ -d "$REPO_ROOT/rust" && -f "$REPO_ROOT/rust/Cargo.toml" ]] || fail "Rust workspace not found next to installer"
 
 prompt() {
@@ -218,7 +214,6 @@ fi
   printf 'CRUDO_SETUP_ENDPOINT=%q\n' "$ENDPOINT"
   printf 'CRUDO_SETUP_API_KEY=%q\n' "$API_KEY"
   printf 'CRUDO_SETUP_MODEL=%q\n' "$MODEL"
-  printf 'CRUDO_SETUP_THINKING=%q\n' "$THINKING"
   printf 'CRUDO_SETUP_LOCAL_KIND=%q\n' "$LOCAL_KIND"
   printf 'CRUDO_REPO_ROOT=%q\n' "$REPO_ROOT"
   printf 'CRUDO_BUILD_PROFILE=%q\n' "$BUILD_PROFILE"
@@ -289,11 +284,10 @@ case "$CRUDO_SETUP_MODE:$CRUDO_SETUP_PROVIDER:$CRUDO_SETUP_LOCAL_KIND" in
   *) printf 'Invalid Crudo configuration. Re-run scripts/install-crudo.sh.\n' >&2; exit 1 ;;
 esac
 export ANTHROPIC_MODEL="$CRUDO_MODEL" CLAUDE_CODE_SUBAGENT_MODEL="$CRUDO_MODEL"
-export CRUDO_THINKING_MODE="${CRUDO_SETUP_THINKING:-auto}"
 
 if [[ "${1:-}" == --config-status ]]; then
-  printf 'mode=%s\nprovider=%s\nendpoint=%s\nmodel=%s\nthinking=%s\napi_key=loaded\nconfig=%s\n' \
-    "$CRUDO_SETUP_MODE" "$CRUDO_SETUP_PROVIDER" "${CRUDO_SETUP_ENDPOINT:-default}" "$CRUDO_SETUP_MODEL" "$CRUDO_THINKING_MODE" "$CONFIG_FILE"
+  printf 'mode=%s\nprovider=%s\nendpoint=%s\nmodel=%s\napi_key=loaded\nconfig=%s\n' \
+    "$CRUDO_SETUP_MODE" "$CRUDO_SETUP_PROVIDER" "${CRUDO_SETUP_ENDPOINT:-default}" "$CRUDO_SETUP_MODEL" "$CONFIG_FILE"
   exit 0
 fi
 cd "$CRUDO_REPO_ROOT"

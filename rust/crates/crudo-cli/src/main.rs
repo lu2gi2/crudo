@@ -309,8 +309,6 @@ const CLI_OPTION_SUGGESTIONS: &[&str] = &[
     "--print",
     "--compact",
     "--base-commit",
-    "--thinking",
-    "--no-thinking",
     "-p",
 ];
 
@@ -848,7 +846,6 @@ fn global_flag_takes_value(flag: &str) -> bool {
             | "--permission-mode"
             | "--base-commit"
             | "--reasoning-effort"
-            | "--thinking"
             | "--allowedTools"
             | "--allowed-tools"
     )
@@ -860,7 +857,6 @@ fn global_flag_is_value_inline(flag: &str) -> bool {
         || flag.starts_with("--permission-mode=")
         || flag.starts_with("--base-commit=")
         || flag.starts_with("--reasoning-effort=")
-        || flag.starts_with("--thinking=")
         || flag.starts_with("--allowedTools=")
         || flag.starts_with("--allowed-tools=")
 }
@@ -1071,7 +1067,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             compact,
             base_commit,
             reasoning_effort,
-            thinking_mode,
             allow_broad_cwd,
         } => {
             enforce_broad_cwd_policy(allow_broad_cwd, output_format)?;
@@ -1090,7 +1085,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let resolved_model = resolve_repl_model(model)?;
             let mut cli = LiveCli::new(resolved_model, true, allowed_tools, permission_mode)?;
             cli.set_reasoning_effort(reasoning_effort);
-            cli.set_thinking_mode(thinking_mode);
             cli.run_turn_with_output(&effective_prompt, output_format, compact)?;
         }
         CliAction::Doctor {
@@ -1149,7 +1143,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             permission_mode,
             base_commit,
             reasoning_effort,
-            thinking_mode,
             allow_broad_cwd,
         } => run_repl(
             model,
@@ -1157,7 +1150,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             permission_mode,
             base_commit,
             reasoning_effort,
-            thinking_mode,
             allow_broad_cwd,
         )?,
         CliAction::HelpTopic {
@@ -1235,7 +1227,6 @@ enum CliAction {
         compact: bool,
         base_commit: Option<String>,
         reasoning_effort: Option<String>,
-        thinking_mode: Option<String>,
         allow_broad_cwd: bool,
     },
     Doctor {
@@ -1278,7 +1269,6 @@ enum CliAction {
         permission_mode: PermissionMode,
         base_commit: Option<String>,
         reasoning_effort: Option<String>,
-        thinking_mode: Option<String>,
         allow_broad_cwd: bool,
     },
     HelpTopic {
@@ -1507,7 +1497,6 @@ fn parse_args(args: &[String]) -> Result<CliAction, String> {
     let mut compact = false;
     let mut base_commit: Option<String> = None;
     let mut reasoning_effort: Option<String> = None;
-    let mut thinking_mode: Option<String> = env::var("CRUDO_THINKING_MODE").ok();
     let mut allow_broad_cwd = false;
 
     // #755: -p prompt text captured as single token; remaining args continue
@@ -1654,28 +1643,6 @@ fn parse_args(args: &[String]) -> Result<CliAction, String> {
                     ));
                 }
                 reasoning_effort = Some(value.to_string());
-                index += 1;
-            }
-            "--thinking" => {
-                let value = args.get(index + 1).ok_or_else(|| {
-                    "missing_flag_value: missing value for --thinking.\nUsage: --thinking auto|on|off".to_string()
-                })?;
-                if !matches!(value.as_str(), "auto" | "on" | "off") {
-                    return Err(format!("invalid_flag_value: invalid value for --thinking: '{value}'.\nUsage: --thinking auto|on|off"));
-                }
-                thinking_mode = Some(value.clone());
-                index += 2;
-            }
-            "--no-thinking" => {
-                thinking_mode = Some("off".to_string());
-                index += 1;
-            }
-            flag if flag.starts_with("--thinking=") => {
-                let value = &flag[10..];
-                if !matches!(value, "auto" | "on" | "off") {
-                    return Err(format!("invalid_flag_value: invalid value for --thinking: '{value}'.\nUsage: --thinking auto|on|off"));
-                }
-                thinking_mode = Some(value.to_string());
                 index += 1;
             }
             "--allow-broad-cwd" => {
@@ -1854,7 +1821,6 @@ fn parse_args(args: &[String]) -> Result<CliAction, String> {
             compact,
             base_commit,
             reasoning_effort,
-            thinking_mode,
             allow_broad_cwd,
         });
     }
@@ -1870,7 +1836,6 @@ fn parse_args(args: &[String]) -> Result<CliAction, String> {
             compact,
             base_commit,
             reasoning_effort: reasoning_effort.clone(),
-            thinking_mode: thinking_mode.clone(),
             allow_broad_cwd,
         });
     }
@@ -1899,7 +1864,6 @@ fn parse_args(args: &[String]) -> Result<CliAction, String> {
                     compact,
                     base_commit,
                     reasoning_effort,
-                    thinking_mode,
                     allow_broad_cwd,
                 });
             }
@@ -1920,7 +1884,6 @@ fn parse_args(args: &[String]) -> Result<CliAction, String> {
             permission_mode,
             base_commit,
             reasoning_effort: reasoning_effort.clone(),
-            thinking_mode: thinking_mode.clone(),
             allow_broad_cwd,
         });
     }
@@ -2149,8 +2112,7 @@ fn parse_args(args: &[String]) -> Result<CliAction, String> {
                     permission_mode: permission_mode(),
                     compact,
                     base_commit,
-                            reasoning_effort: reasoning_effort.clone(),
-                    thinking_mode: thinking_mode.clone(),
+                    reasoning_effort: reasoning_effort.clone(),
                     allow_broad_cwd,
                 }),
                 SkillSlashDispatch::Local => Ok(CliAction::Skills {
@@ -2242,8 +2204,7 @@ Usage: crudo prompt <text>  or  echo '<text>' | crudo prompt".to_string());
                 permission_mode: permission_mode(),
                 compact,
                 base_commit: base_commit.clone(),
-                        reasoning_effort: reasoning_effort.clone(),
-                    thinking_mode: thinking_mode.clone(),
+                reasoning_effort: reasoning_effort.clone(),
                 allow_broad_cwd,
             })
         }
@@ -2256,7 +2217,6 @@ Usage: crudo prompt <text>  or  echo '<text>' | crudo prompt".to_string());
             compact,
             base_commit,
             reasoning_effort,
-            thinking_mode,
             allow_broad_cwd,
         ),
         other => {
@@ -2305,8 +2265,7 @@ Usage: crudo prompt <text>  or  echo '<text>' | crudo prompt".to_string());
                 permission_mode: permission_mode(),
                 compact,
                 base_commit,
-                        reasoning_effort: reasoning_effort.clone(),
-                    thinking_mode: thinking_mode.clone(),
+                reasoning_effort: reasoning_effort.clone(),
                 allow_broad_cwd,
             })
         }
@@ -2698,7 +2657,6 @@ fn parse_direct_slash_cli_action(
     compact: bool,
     base_commit: Option<String>,
     reasoning_effort: Option<String>,
-    thinking_mode: Option<String>,
     allow_broad_cwd: bool,
 ) -> Result<CliAction, String> {
     let raw = rest.join(" ");
@@ -2742,7 +2700,6 @@ fn parse_direct_slash_cli_action(
                     compact,
                     base_commit,
                     reasoning_effort: reasoning_effort.clone(),
-                    thinking_mode: thinking_mode.clone(),
                     allow_broad_cwd,
                 }),
                 SkillSlashDispatch::Local => Ok(CliAction::Skills {
@@ -6684,9 +6641,6 @@ fn run_resume_command(
                 })),
             })
         }
-        SlashCommand::Thinking { .. } => {
-            Err("thinking mode is only available in the interactive REPL".into())
-        }
         SlashCommand::Research { .. } | SlashCommand::ExitResearch => {
             Err("research mode is not supported for resumed commands".into())
         }
@@ -7183,7 +7137,6 @@ fn run_repl(
     permission_mode: PermissionMode,
     base_commit: Option<String>,
     reasoning_effort: Option<String>,
-    thinking_mode: Option<String>,
     allow_broad_cwd: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     enforce_broad_cwd_policy(allow_broad_cwd, CliOutputFormat::Text)?;
@@ -7191,7 +7144,6 @@ fn run_repl(
     let resolved_model = resolve_repl_model(model)?;
     let mut cli = LiveCli::new(resolved_model, true, allowed_tools, permission_mode)?;
     cli.set_reasoning_effort(reasoning_effort);
-    cli.set_thinking_mode(thinking_mode);
     let mut editor =
         input::LineEditor::new("> ", cli.repl_completion_candidates().unwrap_or_default());
     println!("{}", cli.startup_banner());
@@ -7830,12 +7782,6 @@ impl LiveCli {
         }
     }
 
-    fn set_thinking_mode(&mut self, mode: Option<String>) {
-        if let Some(rt) = self.runtime.runtime.as_mut() {
-            rt.api_client_mut().set_thinking_mode(mode);
-        }
-    }
-
     fn startup_banner(&self) -> String {
         let cwd = env::current_dir().map_or_else(
             |_| "<unknown>".to_string(),
@@ -8278,11 +8224,6 @@ impl LiveCli {
             }
             SlashCommand::Status => {
                 self.print_status();
-                false
-            }
-            SlashCommand::Thinking { mode } => {
-                self.set_thinking_mode(Some(mode.clone()));
-                println!("Thinking mode set to {mode}.");
                 false
             }
             SlashCommand::Research { query } => {
@@ -12861,7 +12802,6 @@ struct AnthropicRuntimeClient {
     research_mode: bool,
     progress_reporter: Option<InternalPromptProgressReporter>,
     reasoning_effort: Option<String>,
-    thinking_mode: Option<String>,
 }
 
 impl AnthropicRuntimeClient {
@@ -12929,16 +12869,11 @@ impl AnthropicRuntimeClient {
             research_mode,
             progress_reporter,
             reasoning_effort: None,
-            thinking_mode: None,
         })
     }
 
     fn set_reasoning_effort(&mut self, effort: Option<String>) {
         self.reasoning_effort = effort;
-    }
-
-    fn set_thinking_mode(&mut self, mode: Option<String>) {
-        self.thinking_mode = mode;
     }
 }
 
@@ -12973,7 +12908,6 @@ impl ApiClient for AnthropicRuntimeClient {
             tool_choice: self.enable_tools.then_some(ToolChoice::Auto),
             stream: true,
             reasoning_effort: self.reasoning_effort.clone(),
-            thinking_mode: self.thinking_mode.clone(),
             ..Default::default()
         };
 
@@ -15094,7 +15028,6 @@ mod tests {
                 permission_mode: PermissionMode::WorkspaceWrite,
                 base_commit: None,
                 reasoning_effort: None,
-                thinking_mode: None,
                 allow_broad_cwd: false,
             }
         );
@@ -15229,7 +15162,6 @@ mod tests {
                 compact: false,
                 base_commit: None,
                 reasoning_effort: None,
-                thinking_mode: None,
                 allow_broad_cwd: false,
             }
         );
@@ -15321,7 +15253,6 @@ mod tests {
                 compact: false,
                 base_commit: None,
                 reasoning_effort: None,
-                thinking_mode: None,
                 allow_broad_cwd: false,
             }
         );
@@ -15344,7 +15275,6 @@ mod tests {
                 compact: false,
                 base_commit: None,
                 reasoning_effort: None,
-                thinking_mode: None,
                 allow_broad_cwd: false,
             }
         );
@@ -15361,7 +15291,6 @@ mod tests {
                 compact: false,
                 base_commit: None,
                 reasoning_effort: None,
-                thinking_mode: None,
                 allow_broad_cwd: false,
             }
         );
@@ -15378,7 +15307,6 @@ mod tests {
                 compact: false,
                 base_commit: None,
                 reasoning_effort: None,
-                thinking_mode: None,
                 allow_broad_cwd: false,
             }
         );
@@ -15417,7 +15345,6 @@ mod tests {
                 compact: true,
                 base_commit: None,
                 reasoning_effort: None,
-                thinking_mode: None,
                 allow_broad_cwd: false,
             }
         );
@@ -15433,7 +15360,6 @@ mod tests {
                 compact: true,
                 base_commit: None,
                 reasoning_effort: None,
-                thinking_mode: None,
                 allow_broad_cwd: false,
             }
         );
@@ -15477,7 +15403,6 @@ mod tests {
                 compact: false,
                 base_commit: None,
                 reasoning_effort: None,
-                thinking_mode: None,
                 allow_broad_cwd: false,
             }
         );
@@ -15566,7 +15491,6 @@ mod tests {
                 permission_mode: PermissionMode::ReadOnly,
                 base_commit: None,
                 reasoning_effort: None,
-                thinking_mode: None,
                 allow_broad_cwd: false,
             }
         );
@@ -15588,7 +15512,6 @@ mod tests {
                 permission_mode: PermissionMode::DangerFullAccess,
                 base_commit: None,
                 reasoning_effort: None,
-                thinking_mode: None,
                 allow_broad_cwd: false,
             }
         );
@@ -15619,7 +15542,6 @@ mod tests {
                 compact: false,
                 base_commit: None,
                 reasoning_effort: None,
-                thinking_mode: None,
                 allow_broad_cwd: false,
             }
         );
@@ -15647,7 +15569,6 @@ mod tests {
                 permission_mode: PermissionMode::WorkspaceWrite,
                 base_commit: None,
                 reasoning_effort: None,
-                thinking_mode: None,
                 allow_broad_cwd: false,
             }
         );
@@ -15824,7 +15745,6 @@ mod tests {
                 compact: false,
                 base_commit: None,
                 reasoning_effort: None,
-                thinking_mode: None,
                 allow_broad_cwd: false,
             }
         );
@@ -17260,7 +17180,6 @@ mod tests {
                 compact: false,
                 base_commit: None,
                 reasoning_effort: None,
-                thinking_mode: None,
                 allow_broad_cwd: false,
             }
         );
@@ -17332,7 +17251,6 @@ mod tests {
                 compact: false,
                 base_commit: None,
                 reasoning_effort: None,
-                thinking_mode: None,
                 allow_broad_cwd: false,
             }
         );
@@ -17360,7 +17278,6 @@ mod tests {
                 compact: false,
                 base_commit: None,
                 reasoning_effort: None,
-                thinking_mode: None,
                 allow_broad_cwd: false,
             }
         );
@@ -17496,7 +17413,6 @@ mod tests {
                 compact: false,
                 base_commit: None,
                 reasoning_effort: None,
-                thinking_mode: None,
                 allow_broad_cwd: false,
             }
         );
@@ -17516,7 +17432,6 @@ mod tests {
                 compact: false,
                 base_commit: None,
                 reasoning_effort: None,
-                thinking_mode: None,
                 allow_broad_cwd: false,
             }
         );
@@ -17546,7 +17461,6 @@ mod tests {
                 compact: false,
                 base_commit: None,
                 reasoning_effort: None,
-                thinking_mode: None,
                 allow_broad_cwd: false,
             }
         );

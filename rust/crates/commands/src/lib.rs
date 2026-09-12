@@ -73,13 +73,6 @@ const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
         resume_supported: true,
     },
     SlashCommandSpec {
-        name: "thinking",
-        aliases: &[],
-        summary: "Set thinking mode: auto, on, or off",
-        argument_hint: Some("<auto|on|off>"),
-        resume_supported: true,
-    },
-    SlashCommandSpec {
         name: "research",
         aliases: &[],
         summary: "Temporarily enable public web research capabilities",
@@ -1069,9 +1062,6 @@ const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
 pub enum SlashCommand {
     Help,
     Status,
-    Thinking {
-        mode: String,
-    },
     Research {
         query: Option<String>,
     },
@@ -1265,7 +1255,6 @@ impl SlashCommand {
             Self::History { .. } => "/history",
             Self::Diff => "/diff",
             Self::Status => "/status",
-            Self::Thinking { .. } => "/thinking",
             Self::Research { .. } => "/research",
             Self::ExitResearch => "/exit-research",
             Self::Stats => "/stats",
@@ -1359,15 +1348,6 @@ pub fn validate_slash_command_input(
         "status" => {
             validate_no_args(command, &args)?;
             SlashCommand::Status
-        }
-        "thinking" => {
-            let mode = require_remainder(command, remainder, "<auto|on|off>")?;
-            if !matches!(mode.as_str(), "auto" | "on" | "off") {
-                return Err(SlashCommandParseError::new(
-                    "Invalid thinking mode. Use /thinking auto, /thinking on, or /thinking off.",
-                ));
-            }
-            SlashCommand::Thinking { mode }
         }
         "research" => SlashCommand::Research { query: remainder },
         "exit-research" => {
@@ -5373,7 +5353,6 @@ pub fn handle_slash_command(
             session: session.clone(),
         }),
         SlashCommand::Status
-        | SlashCommand::Thinking { .. }
         | SlashCommand::Research { .. }
         | SlashCommand::ExitResearch
         | SlashCommand::Bughunter { .. }
@@ -6072,7 +6051,7 @@ mod tests {
         assert!(!help.contains("/login"));
         assert!(!help.contains("/logout"));
         assert!(help.contains("/setup"));
-        assert_eq!(slash_command_specs().len(), 143);
+        assert_eq!(slash_command_specs().len(), 142);
         assert!(resume_supported_slash_commands().len() >= 39);
     }
 
