@@ -1,14 +1,14 @@
 # Parity Status — crudo Rust Port
 
-Last updated: 2026-04-03
+Last updated: 2026-09-16
 
 ## Summary
 
 - Canonical document: this top-level `PARITY.md` is the file consumed by `rust/scripts/run_mock_parity_diff.py`.
 - Requested 9-lane checkpoint: **All 9 lanes merged on `main`.**
-- Current `main` HEAD: `ee31e00` (stub implementations replaced with real AskUserQuestion + RemoteTrigger).
-- Repository stats at this checkpoint: **292 commits on `main` / 293 across all branches**, **9 crates**, **48,599 tracked Rust LOC**, **2,568 test LOC**, **3 authors**, date range **2026-03-31 → 2026-04-03**.
-- Mock parity harness stats: **12 scripted scenarios**, **21 captured `/v1/messages` requests** in `rust/crates/crudo-cli/tests/mock_parity_harness.rs`.
+- Current `main` HEAD: `07aa728` (merge of the provider-neutral crudo installer).
+- Repository stats at this checkpoint: **20 commits on `main`**, **11 crates**, **~116,600 tracked Rust LOC**, **~11,400 test LOC**, date range **2026-08-23 → 2026-09-16**.
+- Mock parity harness stats: **12 scripted scenarios** in `rust/mock_parity_scenarios.json`, exercised via `rust/crates/crudo-cli/tests/mock_parity_harness.rs`.
 
 ## Mock parity harness — milestone 1
 

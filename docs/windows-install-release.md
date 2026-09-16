@@ -9,7 +9,7 @@ This page is the PowerShell-first path for installing, verifying, and safely swi
 Use this when you are developing Crudo or testing a local checkout.
 
 ```powershell
-git clone https://github.com/ultraworkers/crudo
+git clone https://github.com/lu2gi2/crudo
 Set-Location .\crudo\rust
 cargo build --workspace
 .\target\debug\crudo.exe --help
@@ -68,7 +68,7 @@ wsl
 Then inside WSL:
 
 ```bash
-git clone https://github.com/ultraworkers/crudo
+git clone https://github.com/lu2gi2/crudo
 cd crudo
 ./install.sh
 ```

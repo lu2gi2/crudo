@@ -18,7 +18,7 @@ workspace with supporting docs and compatibility fixtures.
 ## Local setup
 
 ```bash
-git clone https://github.com/ultraworkers/crudo
+git clone https://github.com/lu2gi2/crudo
 cd crudo/rust
 cargo build --workspace
 cargo test --workspace

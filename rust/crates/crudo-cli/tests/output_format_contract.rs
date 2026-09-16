@@ -1516,7 +1516,7 @@ fn doctor_and_resume_status_emit_json_when_requested() {
         .expect("install source check");
     assert_eq!(
         install_source["official_repo"],
-        "https://github.com/ultraworkers/crudo"
+        "https://github.com/lu2gi2/crudo"
     );
     assert_eq!(install_source["deprecated_install"], "cargo install crudo");
 

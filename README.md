@@ -1,68 +1,7 @@
 # Crudo
 
 <p align="center">
-  <a href="https://github.com/code-yeongyu/lazycodex">
-    <img src="https://img.shields.io/badge/LazyCodex-codex%20for%20no--brainers-111111?style=for-the-badge&logo=github&logoColor=white" alt="LazyCodex banner" />
-  </a>
-  <a href="https://github.com/Yeachan-Heo/gajae-code">
-    <img src="https://img.shields.io/badge/Gajae--Code-red--crudo%20agent%20harness-B22222?style=for-the-badge&logo=github&logoColor=white" alt="Gajae-Code banner" />
-  </a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/code-yeongyu/lazycodex">
-    <img src="https://opengraph.githubassets.com/lazycodex-card/code-yeongyu/lazycodex" alt="LazyCodex GitHub card" width="280" />
-  </a>
-  <a href="https://github.com/Yeachan-Heo/gajae-code">
-    <img src="https://opengraph.githubassets.com/gajae-code-card/Yeachan-Heo/gajae-code" alt="Gajae-Code GitHub card" width="280" />
-  </a>
-</p>
-
-<h3 align="center">start with the real crab-powered harnesses</h3>
-
-<p align="center">
-  <a href="https://github.com/code-yeongyu/lazycodex"><b>github.com/code-yeongyu/lazycodex</b></a>
-  <br/>
-  <a href="https://github.com/Yeachan-Heo/gajae-code"><b>github.com/Yeachan-Heo/gajae-code</b></a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/code-yeongyu/lazycodex">
-    <img src="https://img.shields.io/badge/Open-LazyCodex-111111?style=flat-square&logo=github&logoColor=white" alt="Open LazyCodex on GitHub" />
-  </a>
-  <a href="https://github.com/Yeachan-Heo/gajae-code">
-    <img src="https://img.shields.io/badge/Open-Gajae--Code-B22222?style=flat-square&logo=github&logoColor=white" alt="Open Gajae-Code on GitHub" />
-  </a>
-</p>
-
-<p align="center">
-  <a href="https://discord.gg/GtjhvgjnV">
-    <img src="https://img.shields.io/badge/Discord-join%20the%20harness%20lab-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join the harness lab on Discord" />
-  </a>
-  <a href="https://discord.gg/4Rt79F7dF">
-    <img src="https://img.shields.io/badge/Discord-join%20the%20crab%20tank-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join the crab tank on Discord" />
-  </a>
-</p>
-
-<p align="center">
-  Join the Discords:
-  <a href="https://discord.gg/GtjhvgjnV"><b>ultraworkers discord</b></a>
-  ·
-  <a href="https://discord.gg/4Rt79F7dF"><b>gajae-code discord</b></a>
-</p>
-
-> [!IMPORTANT]
-> **Crudo is not the serious production project here.**
-> This repository is closer to a museum exhibit than a product pitch, a crustacean-run artifact kept alive by gajaes, swept and labeled by agents, and automatically maintained according to the harnesses above.
->
-> As already described in the project philosophy, this is not meant to be hand-operated like a normal product repo. It is an **agent-managed exhibit**: the harnesses plan, execute, verify, label, and preserve the artifact while the crabs keep the tank running.
->
-> If you want to actually run work, start with **[LazyCodex](https://github.com/code-yeongyu/lazycodex)** or **[Gajae-Code](https://github.com/Yeachan-Heo/gajae-code)**. If you want to inspect the strange little fossil of the Crudo moment, continue below.
->
-> For the longer public explanation behind this philosophy, see [here](https://x.com/realsigridjin/status/2039472968624185713).
-
-<p align="center">
-  <a href="https://github.com/ultraworkers/crudo">ultraworkers/crudo</a>
+  <a href="https://github.com/lu2gi2/crudo">lu2gi2/crudo</a>
   ·
   <a href="./USAGE.md">Usage</a>
   ·
@@ -75,16 +14,14 @@
   <a href="./CONTRIBUTING.md">Contributing</a>
   ·
   <a href="./SECURITY.md">Security</a>
-  ·
-  <a href="https://discord.gg/5TUQKqFWd">UltraWorkers Discord</a>
 </p>
 
 <p align="center">
-  <a href="https://star-history.com/#ultraworkers/crudo&Date">
+  <a href="https://star-history.com/#lu2gi2/crudo&Date">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ultraworkers/crudo&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ultraworkers/crudo&type=Date" />
-      <img alt="Star history for ultraworkers/crudo" src="https://api.star-history.com/svg?repos=ultraworkers/crudo&type=Date" width="600" />
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=lu2gi2/crudo&type=Date&theme=dark" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=lu2gi2/crudo&type=Date" />
+      <img alt="Star history for lu2gi2/crudo" src="https://api.star-history.com/svg?repos=lu2gi2/crudo&type=Date" width="600" />
     </picture>
   </a>
 </p>
@@ -94,7 +31,7 @@
 </p>
 
 Crudo is the public Rust implementation of the `crudo` CLI agent harness.
-The canonical implementation lives in [`rust/`](./rust), and the current source of truth for this repository is **ultraworkers/crudo**.
+The canonical implementation lives in [`rust/`](./rust), and the current source of truth for this repository is **lu2gi2/crudo**.
 
 > [!IMPORTANT]
 > Start with [`USAGE.md`](./USAGE.md) for build, auth, CLI, session, and parity-harness workflows. For file submission/navigation questions, see [Navigation and file context](./docs/navigation-file-context.md). For local OpenAI-compatible models and offline skill installs, see [Local OpenAI-compatible providers and skills setup](./docs/local-openai-compatible-providers.md). Windows users can jump to the PowerShell-first [Windows install and release quickstart](./docs/windows-install-release.md). Make `crudo doctor` your first health check after building, use [`rust/README.md`](./rust/README.md) for crate-level details, read [`PARITY.md`](./PARITY.md) for the current Rust-port checkpoint, and see [`docs/container.md`](./docs/container.md) for the container-first workflow.
@@ -106,23 +43,22 @@ The canonical implementation lives in [`rust/`](./rust), and the current source 
 - **`rust/`** — canonical Rust workspace and the `crudo` CLI binary
 - **`USAGE.md`** — task-oriented usage guide for the current product surface
 - **`PARITY.md`** — Rust-port parity status and migration notes
-- **`ROADMAP.md`** — active roadmap and cleanup backlog
+- **`ROADMAP.md`** — dated, changelog-style log of past work and dogfooding findings, not a forward-looking backlog
 - **`PHILOSOPHY.md`** — project intent and system-design framing
 - **`src/` + `tests/`** — companion Python/reference workspace and audit helpers; not the primary runtime surface
 
 ## Quick start
 
-> [!NOTE]
 > [!WARNING]
 > **`cargo install crudo` installs the wrong thing.** The `crudo` crate on crates.io is a deprecated stub that places `crudo-deprecated.exe` — not `crudo`. Running it only prints `"crudo has been renamed to agent-code"`. **Do not use `cargo install crudo`.** Either build from source (this repo) or install the upstream binary:
 > ```bash
 > cargo install agent-code   # upstream binary — installs 'agent.exe' (Windows) / 'agent' (Unix), NOT 'agent-code'
 > ```
-> This repo (`ultraworkers/crudo`) is **build-from-source only** — follow the steps below.
+> This repo (`lu2gi2/crudo`) is **build-from-source only** — follow the steps below.
 
 ```bash
 # 1. Clone and build
-git clone https://github.com/ultraworkers/crudo
+git clone https://github.com/lu2gi2/crudo
 cd crudo/rust
 cargo build --workspace
 
@@ -148,18 +84,18 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 1. **Install Rust first** — download from <https://rustup.rs/> and run the installer. Close and reopen your terminal when it finishes.
 2. **Configure and install Crudo** — run `bash scripts/install-crudo.sh` and choose cloud endpoint, direct provider key, or local/self-hosted model. Direct mode includes named Gemini, Groq, and OpenRouter presets as well as Anthropic, OpenAI, xAI, DashScope, and custom OpenAI-compatible endpoints. This installs the normal `crudo` command; `scripts/install-crudo-luna.sh` is retained only for compatibility.
-2. **Verify Rust is on PATH:**
+3. **Verify Rust is on PATH:**
    ```powershell
    cargo --version
    ```
    If this fails, reopen your terminal or run the PATH setup from the Rust installer output, then retry.
-3. **Clone and build** (works in PowerShell, Git Bash, or WSL):
+4. **Clone and build** (works in PowerShell, Git Bash, or WSL):
    ```powershell
-   git clone https://github.com/ultraworkers/crudo
+   git clone https://github.com/lu2gi2/crudo
    cd crudo/rust
    cargo build --workspace
    ```
-4. **Run** (PowerShell — note `.exe` and backslash):
+5. **Run** (PowerShell — note `.exe` and backslash):
    ```powershell
    $env:ANTHROPIC_API_KEY = "sk-ant-..."
    .\target\debug\crudo.exe prompt "say hello"
@@ -277,22 +213,11 @@ cargo test --workspace
 - [`rust/README.md`](./rust/README.md) — crate map, CLI surface, features, workspace layout
 - [`PARITY.md`](./PARITY.md) — parity status for the Rust port
 - [`rust/MOCK_PARITY_HARNESS.md`](./rust/MOCK_PARITY_HARNESS.md) — deterministic mock-service harness details
-- [`ROADMAP.md`](./ROADMAP.md) — active roadmap and open cleanup work
+- [`ROADMAP.md`](./ROADMAP.md) — historical, dated log of implemented work and dogfooding findings
 - [`docs/g004-events-reports-contract.md`](./docs/g004-events-reports-contract.md) — Stream 2 lane event/report contract guidance for consumers
 - [`PHILOSOPHY.md`](./PHILOSOPHY.md) — why the project exists and how it is operated
 - [`CONTRIBUTING.md`](./CONTRIBUTING.md), [`SECURITY.md`](./SECURITY.md), [`SUPPORT.md`](./SUPPORT.md), and [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) — contribution, vulnerability-reporting, support, and community policies
 - [`LICENSE`](./LICENSE) — MIT license for this repository
-
-## Ecosystem
-
-Crudo is built in the open alongside the broader UltraWorkers toolchain:
-
-- [crudohip](https://github.com/Yeachan-Heo/crudohip)
-- [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent)
-- [oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode)
-- [oh-my-codex](https://github.com/Yeachan-Heo/oh-my-codex)
-- [gajae-code](https://github.com/Yeachan-Heo/gajae-code)
-- [UltraWorkers Discord](https://discord.gg/5TUQKqFWd)
 
 ## Ownership / affiliation disclaimer
 

@@ -17,11 +17,14 @@ FILES = [
 FILES.extend(sorted((ROOT / 'docs').rglob('*.md')) if (ROOT / 'docs').exists() else [])
 
 FORBIDDEN = {
-    r'github\.com/Yeachan-Heo/crudo(?:[/?#)\s]|$)': 'replace old crudo GitHub links with ultraworkers/crudo',
-    r'github\.com/code-yeongyu/crudo': 'replace stale alternate crudo GitHub links with ultraworkers/crudo',
-    r'discord\.gg/6ztZB9jvWq': 'replace the stale UltraWorkers Discord invite with the current invite',
-    r'api\.star-history\.com/svg\?repos=Yeachan-Heo/crudo': 'update star-history embeds to ultraworkers/crudo',
-    r'star-history\.com/#Yeachan-Heo/crudo': 'update star-history links to ultraworkers/crudo',
+    r'github\.com/Yeachan-Heo/crudo(?:[/?#)\s]|$)': 'replace old crudo GitHub links with lu2gi2/crudo',
+    r'github\.com/code-yeongyu/crudo': 'replace stale alternate crudo GitHub links with lu2gi2/crudo',
+    r'github\.com/ultraworkers/crudo': 'replace stale ultraworkers crudo GitHub links with lu2gi2/crudo',
+    r'discord\.gg/6ztZB9jvWq': 'remove the stale UltraWorkers Discord invite',
+    r'api\.star-history\.com/svg\?repos=Yeachan-Heo/crudo': 'update star-history embeds to lu2gi2/crudo',
+    r'api\.star-history\.com/svg\?repos=ultraworkers/crudo': 'update star-history embeds to lu2gi2/crudo',
+    r'star-history\.com/#Yeachan-Heo/crudo': 'update star-history links to lu2gi2/crudo',
+    r'star-history\.com/#ultraworkers/crudo': 'update star-history links to lu2gi2/crudo',
     r'assets/instructkr\.png': 'remove stale instructkr image references',
 }
 

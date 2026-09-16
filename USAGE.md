@@ -446,7 +446,7 @@ No. Crudo is a Claude-Code-shaped workflow/runtime, not a Claude-only product. I
 
 The name "codex" appears in the Crudo ecosystem but it does **not** refer to OpenAI Codex (the code-generation model). Here is what it means in this project:
 
-- **`oh-my-codex` (OmX)** is the workflow and plugin layer that sits on top of `crudo`. It provides planning modes, parallel multi-agent execution, notification routing, and other automation features. See [PHILOSOPHY.md](./PHILOSOPHY.md) and the [oh-my-codex repo](https://github.com/Yeachan-Heo/oh-my-codex).
+- **`oh-my-codex` (OmX)** is the workflow and plugin layer that sits on top of `crudo`. It provides planning modes, parallel multi-agent execution, notification routing, and other automation features. See [PHILOSOPHY.md](./PHILOSOPHY.md).
 - **`.codex/` directories** (e.g. `.codex/skills`, `.codex/agents`, `.codex/commands`) are legacy lookup paths that `crudo` still scans alongside the primary `.crudo/` directories.
 - **`CODEX_HOME`** is an optional environment variable that points to a custom root for user-level skill and command lookups.
 
@@ -675,9 +675,11 @@ Current Rust crates:
 - `api`
 - `commands`
 - `compat-harness`
+- `crudo-analog`
+- `crudo-cli`
+- `crudo-rag-service`
 - `mock-anthropic-service`
 - `plugins`
 - `runtime`
-- `crudo-cli`
 - `telemetry`
 - `tools`

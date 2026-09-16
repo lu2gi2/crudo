@@ -256,6 +256,6 @@ fn my_new_model_is_detected() {
 
 ---
 
-*Last updated: 2026-05-15*
+*Last updated: 2026-09-16*
 
 For questions or updates, see the implementation in `rust/crates/api/src/providers/openai_compat.rs`.

@@ -61,7 +61,7 @@ crudo/
 
 ## ANTI-PATTERNS (THIS PROJECT)
 - NEVER `cargo install crudo` — crates.io stub is deprecated and installs `crudo-deprecated.exe`; build from source
-- Forbidden doc strings (CI-enforced by .github/scripts/check_doc_source_of_truth.py): old org links `github.com/Yeachan-Heo/crudo`, `github.com/code-yeongyu/crudo`, `discord.gg/6ztZB9jvWq`, `assets/crudo-hero.jpeg`
+- Forbidden doc strings (CI-enforced by .github/scripts/check_doc_source_of_truth.py): stale prior-org GitHub links, the stale Discord invite, `assets/crudo-hero.jpeg` — see the script's `FORBIDDEN` map for the exact patterns
 - Deprecated config keys: `permissionMode` → `permissions.defaultMode`; `enabledPlugins` → `plugins.enabled`; env `RUSTY_CLAUDE_PERMISSION_MODE` is dead
 - Direct push to main is policy-blocked (`main_push_forbidden` approval scope)
 - Automation lanes must not merge/close remote PRs/issues (docs/anti-slop-triage.md)

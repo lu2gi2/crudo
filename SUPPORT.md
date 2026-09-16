@@ -8,8 +8,8 @@ Use the lightest support path that fits the request:
   expected behavior, actual behavior, and relevant non-secret output.
 - **Security issues:** follow [SECURITY.md](./SECURITY.md) instead of opening a
   public issue.
-- **Community discussion:** use the UltraWorkers Discord linked from
-  [README.md](./README.md).
+- **Community discussion:** open a GitHub Discussion on
+  [lu2gi2/crudo](https://github.com/lu2gi2/crudo).
 
 When asking for help, include:
 
