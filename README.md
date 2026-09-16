@@ -20,16 +20,6 @@
   <a href="./SECURITY.md">Security</a>
 </p>
 
-<p align="center">
-  <a href="https://star-history.com/#lu2gi2/crudo&Date">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=lu2gi2/crudo&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=lu2gi2/crudo&type=Date" />
-      <img alt="Star history for lu2gi2/crudo" src="https://api.star-history.com/svg?repos=lu2gi2/crudo&type=Date" width="600" />
-    </picture>
-  </a>
-</p>
-
 ---
 
 ## What's running on the floor
