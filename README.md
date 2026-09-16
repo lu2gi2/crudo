@@ -1,4 +1,8 @@
-# Crudo
+<p align="center">
+  <img src="assets/crudo-hero.png" alt="Crudo" width="450" />
+</p>
+
+<p align="center"><i>a Rust-built coding-agent harness, run off the factory floor</i></p>
 
 <p align="center">
   <a href="https://github.com/lu2gi2/crudo">lu2gi2/crudo</a>
@@ -9,7 +13,7 @@
   ·
   <a href="./PARITY.md">Parity</a>
   ·
-  <a href="./ROADMAP.md">Roadmap</a>
+  <a href="./ROADMAP.md">Build log</a>
   ·
   <a href="./CONTRIBUTING.md">Contributing</a>
   ·
@@ -26,28 +30,18 @@
   </a>
 </p>
 
-<p align="center">
-  <img src="assets/crudo-hero.jpeg" alt="Crudo" width="300" />
-</p>
+---
 
-Crudo is the public Rust implementation of the `crudo` CLI agent harness.
-The canonical implementation lives in [`rust/`](./rust), and the current source of truth for this repository is **lu2gi2/crudo**.
+## What's running on the floor
+
+Crudo is a Rust CLI that drives an LLM through a tool loop — read and write files, run shell commands, search a codebase, call MCP servers — gated by a permission system that decides what the agent is actually allowed to touch. [`rust/`](./rust) is the factory floor itself: the canonical Cargo workspace and the `crudo` binary. Everything else in this repository — docs, the build log, the Python reference harness — is scaffolding around it.
 
 > [!IMPORTANT]
-> Start with [`USAGE.md`](./USAGE.md) for build, auth, CLI, session, and parity-harness workflows. For file submission/navigation questions, see [Navigation and file context](./docs/navigation-file-context.md). For local OpenAI-compatible models and offline skill installs, see [Local OpenAI-compatible providers and skills setup](./docs/local-openai-compatible-providers.md). Windows users can jump to the PowerShell-first [Windows install and release quickstart](./docs/windows-install-release.md). Make `crudo doctor` your first health check after building, use [`rust/README.md`](./rust/README.md) for crate-level details, read [`PARITY.md`](./PARITY.md) for the current Rust-port checkpoint, and see [`docs/container.md`](./docs/container.md) for the container-first workflow.
+> Start with [`USAGE.md`](./USAGE.md) for build, auth, CLI, session, and parity-harness workflows. Make `crudo doctor` your first health check after building. For crate-level detail see [`rust/README.md`](./rust/README.md); for the current Rust-port checkpoint see [`PARITY.md`](./PARITY.md); for the container-first workflow see [`docs/container.md`](./docs/container.md).
 >
 > **ACP / Zed status:** `crudo` does not ship an ACP/Zed daemon or JSON-RPC entrypoint yet. Run `crudo acp` (or `crudo --acp`) for the current status instead of guessing from source layout; `crudo acp serve` is currently a discoverability alias only, returns status with exit code 0, and real ACP support remains tracked separately in `ROADMAP.md`. For the public JSON contract, see [`docs/g011-acp-json-rpc-status-contract.md`](./docs/g011-acp-json-rpc-status-contract.md).
 
-## Current repository shape
-
-- **`rust/`** — canonical Rust workspace and the `crudo` CLI binary
-- **`USAGE.md`** — task-oriented usage guide for the current product surface
-- **`PARITY.md`** — Rust-port parity status and migration notes
-- **`ROADMAP.md`** — dated, changelog-style log of past work and dogfooding findings, not a forward-looking backlog
-- **`PHILOSOPHY.md`** — project intent and system-design framing
-- **`src/` + `tests/`** — companion Python/reference workspace and audit helpers; not the primary runtime surface
-
-## Quick start
+## Assembly line: build & run
 
 > [!WARNING]
 > **`cargo install crudo` installs the wrong thing.** The `crudo` crate on crates.io is a deprecated stub that places `crudo-deprecated.exe` — not `crudo`. Running it only prints `"crudo has been renamed to agent-code"`. **Do not use `cargo install crudo`.** Either build from source (this repo) or install the upstream binary:
@@ -78,9 +72,10 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 > [!NOTE]
 > **Windows (PowerShell):** the binary is `crudo.exe`, not `crudo`. Use `.\target\debug\crudo.exe` or run `cargo run -- prompt "say hello"` to skip the path lookup.
 
-### Windows setup
+<details>
+<summary><b>Windows / PowerShell line — full setup</b></summary>
 
-**PowerShell is a supported Windows path.** Use whichever shell works for you. The common onboarding issues on Windows are:
+**PowerShell is a supported Windows path.** Use whichever shell works for you. The common onboarding steps:
 
 1. **Install Rust first** — download from <https://rustup.rs/> and run the installer. Close and reopen your terminal when it finishes.
 2. **Configure and install Crudo** — run `bash scripts/install-crudo.sh` and choose cloud endpoint, direct provider key, or local/self-hosted model. Direct mode includes named Gemini, Groq, and OpenRouter presets as well as Anthropic, OpenAI, xAI, DashScope, and custom OpenAI-compatible endpoints. This installs the normal `crudo` command; `scripts/install-crudo-luna.sh` is retained only for compatibility.
@@ -105,41 +100,29 @@ For release ZIPs, PATH setup, provider switching, and notification smoke checks,
 
 **Git Bash / WSL** are optional alternatives, not requirements. If you prefer bash-style paths (`/c/Users/you/...` instead of `C:\Users\you\...`), Git Bash (ships with Git for Windows) works well. In Git Bash, the `MINGW64` prompt is expected and normal — not a broken install.
 
-## Post-build: locate the binary and verify
+</details>
 
-After running `cargo build --workspace`, the `crudo` binary is built but **not** automatically installed to your system. Here's where to find it and how to verify the build succeeded.
+## Quality control: verify the build
 
-### Binary location
+After `cargo build --workspace`, the `crudo` binary exists but is **not** automatically installed to your system.
 
-After `cargo build --workspace` in `crudo/rust/`:
+**Where it lands:**
 
-**Debug build (default, faster compile):**
-- **macOS/Linux:** `rust/target/debug/crudo`
-- **Windows:** `rust/target/debug/crudo.exe`
+| Build   | macOS/Linux                | Windows                        |
+|---------|-----------------------------|---------------------------------|
+| Debug (default) | `rust/target/debug/crudo` | `rust/target/debug/crudo.exe` |
+| Release (`--release`) | `rust/target/release/crudo` | `rust/target/release/crudo.exe` |
 
-**Release build (optimized, slower compile):**
-- **macOS/Linux:** `rust/target/release/crudo`
-- **Windows:** `rust/target/release/crudo.exe`
-
-If you ran `cargo build` without `--release`, the binary is in the `debug/` folder.
-
-### Verify the build succeeded
-
-Test the binary directly using its path:
+**Smoke-test it:**
 
 ```bash
 # macOS/Linux (debug build)
 ./rust/target/debug/crudo --help
 ./rust/target/debug/crudo doctor
-
-# Windows PowerShell (debug build)
-.\rust\target\debug\crudo.exe --help
-.\rust\target\debug\crudo.exe doctor
 ```
 
-PowerShell smoke commands that do not require live credentials:
-
 ```powershell
+# Windows PowerShell — no live credentials required
 $env:CRUDO_CONFIG_HOME = Join-Path $env:TEMP "crudo config home"
 New-Item -ItemType Directory -Force -Path $env:CRUDO_CONFIG_HOME | Out-Null
 Remove-Item Env:\ANTHROPIC_API_KEY, Env:\ANTHROPIC_AUTH_TOKEN, Env:\OPENAI_API_KEY -ErrorAction SilentlyContinue
@@ -149,75 +132,89 @@ Remove-Item Env:\ANTHROPIC_API_KEY, Env:\ANTHROPIC_AUTH_TOKEN, Env:\OPENAI_API_K
 .\rust\target\debug\crudo.exe doctor
 ```
 
-If these commands succeed, the build is working. `crudo doctor` is your first health check — it validates your API key, model access, and tool configuration.
+If these succeed, the build is working. `crudo doctor` is your first health check — it validates your API key, model access, and tool configuration.
 
-### Optional: Add to PATH
-
-If you want to run `crudo` from any directory without the full path, choose one of these approaches:
-
-**Option 1: Symlink (macOS/Linux)**
-```bash
-ln -s $(pwd)/rust/target/debug/crudo /usr/local/bin/crudo
-```
-Then reload your shell and test:
-```bash
-crudo --help
-```
-
-**Option 2: Use `cargo install` (all platforms)**
-
-Build and install to Cargo's default location (`~/.cargo/bin/`, which is usually on PATH):
-```bash
-# From the crudo/rust/ directory
-cargo install --path . --force
-
-# Then from anywhere
-crudo --help
-```
-
-**Option 3: Update shell profile (bash/zsh)**
-
-Add this line to `~/.bashrc` or `~/.zshrc`:
-```bash
-export PATH="$(pwd)/rust/target/debug:$PATH"
-```
-
-Reload your shell:
-```bash
-source ~/.bashrc  # or source ~/.zshrc
-crudo --help
-```
-
-### Troubleshooting
-
-- **"command not found: crudo"** — The binary is in `rust/target/debug/crudo`, but it's not on your PATH. Use the full path `./rust/target/debug/crudo` or symlink/install as above.
-- **"permission denied"** — On macOS/Linux, you may need `chmod +x rust/target/debug/crudo` if the executable bit isn't set (rare).
-- **Debug vs. release** — If the build is slow, you're in debug mode (default). Add `--release` to `cargo build` for faster runtime, but the build itself will take 5–10 minutes.
-
-> [!NOTE]
-> **Auth:** crudo requires an **API key** (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) — Claude subscription login is not a supported auth path.
-
-Run the workspace test suite after verifying the binary works:
+Then run the full workspace test suite:
 
 ```bash
 cd rust
 cargo test --workspace
 ```
 
-## Documentation map
+> [!NOTE]
+> **Auth:** crudo requires an **API key** (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) — Claude subscription login is not a supported auth path.
 
+<details>
+<summary>Put <code>crudo</code> on your PATH, and troubleshoot a build that doesn't run</summary>
+
+**Option 1: Symlink (macOS/Linux)**
+```bash
+ln -s $(pwd)/rust/target/debug/crudo /usr/local/bin/crudo
+crudo --help
+```
+
+**Option 2: `cargo install` (all platforms)**
+```bash
+# From the crudo/rust/ directory
+cargo install --path . --force
+crudo --help
+```
+
+**Option 3: Shell profile (bash/zsh)**
+```bash
+echo 'export PATH="'"$(pwd)"'/rust/target/debug:$PATH"' >> ~/.bashrc  # or ~/.zshrc
+source ~/.bashrc
+crudo --help
+```
+
+**Common failures:**
+- **"command not found: crudo"** — the binary is in `rust/target/debug/crudo`, but it's not on your PATH. Use the full path or one of the options above.
+- **"permission denied"** — on macOS/Linux, run `chmod +x rust/target/debug/crudo` if the executable bit isn't set (rare).
+- **Debug vs. release** — debug mode is the default and compiles faster; add `--release` for faster *runtime*, at the cost of a 5–10 minute build.
+
+</details>
+
+## Floor plan
+
+```text
+crudo/
+├── rust/            canonical Cargo workspace — 11 crates, the `crudo` CLI binary
+├── docs/            reference docs: providers, sessions, contracts, release gates
+├── USAGE.md         task-oriented usage guide for the current product surface
+├── PARITY.md        Rust-port parity status and migration notes
+├── ROADMAP.md       dated, changelog-style log of past work — history, not a live backlog
+├── PHILOSOPHY.md     project intent and system-design framing
+└── src/ + tests/    companion Python reference workspace and audit helpers (non-primary)
+```
+
+## Manuals
+
+**Getting running**
 - [`USAGE.md`](./USAGE.md) — quick commands, auth, sessions, config, parity harness
-- [`docs/navigation-file-context.md`](./docs/navigation-file-context.md) — terminal navigation, scrollback, `@path` file context, attachments, and secret-safety guidance
-- [`docs/local-openai-compatible-providers.md`](./docs/local-openai-compatible-providers.md) — Ollama/llama.cpp/vLLM setup, Crudo multi-provider positioning, and local skills install checks
-- [`docs/windows-install-release.md`](./docs/windows-install-release.md) — PowerShell-first install, release artifact, provider switching, and Windows/WSL notification smoke paths
+- [`docs/windows-install-release.md`](./docs/windows-install-release.md) — PowerShell-first install, release artifact, provider switching, Windows/WSL notification smoke paths
+- [`docs/container.md`](./docs/container.md) — container-first workflow
+- [`docs/navigation-file-context.md`](./docs/navigation-file-context.md) — terminal navigation, scrollback, `@path` file context, attachments, secret-safety guidance
+
+**Providers & models**
+- [`docs/local-openai-compatible-providers.md`](./docs/local-openai-compatible-providers.md) — Ollama/llama.cpp/vLLM setup, multi-provider positioning, local skills install checks
+- [`docs/MODEL_COMPATIBILITY.md`](./docs/MODEL_COMPATIBILITY.md) — tested models, aliases, and compatibility notes
+
+**Internals & contracts**
 - [`rust/README.md`](./rust/README.md) — crate map, CLI surface, features, workspace layout
 - [`PARITY.md`](./PARITY.md) — parity status for the Rust port
 - [`rust/MOCK_PARITY_HARNESS.md`](./rust/MOCK_PARITY_HARNESS.md) — deterministic mock-service harness details
-- [`ROADMAP.md`](./ROADMAP.md) — historical, dated log of implemented work and dogfooding findings
-- [`docs/g004-events-reports-contract.md`](./docs/g004-events-reports-contract.md) — Stream 2 lane event/report contract guidance for consumers
+- [`docs/g004-events-reports-contract.md`](./docs/g004-events-reports-contract.md) — lane event/report contract for consumers
+- [`docs/g011-acp-json-rpc-status-contract.md`](./docs/g011-acp-json-rpc-status-contract.md) — ACP/JSON-RPC status contract
+
+**Project & policy**
 - [`PHILOSOPHY.md`](./PHILOSOPHY.md) — why the project exists and how it is operated
-- [`CONTRIBUTING.md`](./CONTRIBUTING.md), [`SECURITY.md`](./SECURITY.md), [`SUPPORT.md`](./SUPPORT.md), and [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) — contribution, vulnerability-reporting, support, and community policies
+- [`ROADMAP.md`](./ROADMAP.md) — historical, dated log of implemented work and dogfooding findings
+- [`CONTRIBUTING.md`](./CONTRIBUTING.md), [`SECURITY.md`](./SECURITY.md), [`SUPPORT.md`](./SUPPORT.md), [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) — contribution, vulnerability-reporting, support, and community policies
 - [`LICENSE`](./LICENSE) — MIT license for this repository
+
+## Why this exists
+
+The short version, from [`PHILOSOPHY.md`](./PHILOSOPHY.md): a human sets direction, and the agents that live in this repo — the crudos — break it into tasks, write the code, run the tests, argue over failures, recover, and push when the work passes. The repository is the artifact; the coordination loop that produced it is the actual point.
 
 ## Ownership / affiliation disclaimer
 
